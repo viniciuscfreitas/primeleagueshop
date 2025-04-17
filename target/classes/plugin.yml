@@ -1,0 +1,43 @@
+name: PrimeLeagueShop
+version: 1.0.0
+main: com.primeleague.shop.PrimeLeagueShopPlugin
+author: PrimeLeague
+description: Um plugin de loja modular para servidores Minecraft Bukkit/Spigot
+
+commands:
+  shop:
+    description: Comando principal da loja
+    usage: |
+      §e/shop §7- Abre a loja
+      §e/shop history §7- Mostra histórico de transações
+      §e/shop top [buy|sell] §7- Mostra ranking de compradores/vendedores
+    aliases: [loja]
+
+permissions:
+  primeleague.shop.*:
+    description: Acesso total ao plugin
+    children:
+      primeleague.shop.use: true
+      primeleague.shop.buy: true
+      primeleague.shop.sell: true
+      primeleague.shop.history: true
+      primeleague.shop.top: true
+      primeleague.shop.admin: true
+  primeleague.shop.use:
+    description: Permite usar a loja
+    default: true
+  primeleague.shop.buy:
+    description: Permite comprar itens
+    default: true
+  primeleague.shop.sell:
+    description: Permite vender itens
+    default: true
+  primeleague.shop.history:
+    description: Permite ver histórico de transações
+    default: true
+  primeleague.shop.top:
+    description: Permite ver ranking de compradores/vendedores
+    default: true
+  primeleague.shop.admin:
+    description: Acesso administrativo ao plugin
+    default: op

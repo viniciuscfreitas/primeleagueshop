@@ -1,0 +1,84 @@
+settings:
+  economy:
+    use-vault: true
+    currency-symbol: "$"
+  gui:
+    main-title: "&8Loja Prime League"
+    category-title: "&8Categoria: &a{category}"
+    rows: 6
+    fill-empty-slots: true
+    fill-material: STAINED_GLASS_PANE
+    fill-data: 15
+  transaction:
+    log-to-database: false
+    log-to-console: true
+    max-buy-quantity: 64
+    max-sell-quantity: 64
+    confirm-above-price: 1000
+    rate-limit: 10 # Transações por minuto
+
+combat:
+  enabled: true
+  duration: 10 # Segundos
+  block-commands: true
+  block-gui: true
+  messages:
+    enter: "&cVocê entrou em combate! Não poderá usar a loja por {time} segundos."
+    blocked: "&cVocê não pode usar a loja durante o combate! Aguarde {time} segundos."
+
+feedback:
+  sounds:
+    enabled: true
+    volume: 1.0
+    pitch: 1.0
+    buy-success: NOTE_PLING
+    sell-success: NOTE_PIANO
+    error: NOTE_BASS
+  particles:
+    enabled: true
+    buy-success: HAPPY_VILLAGER
+    sell-success: HAPPY_VILLAGER
+    error: SMOKE
+  messages:
+    buy-success: "&aCompra realizada com sucesso!"
+    sell-success: "&aVenda realizada com sucesso!"
+    error: "&cTransação falhou!"
+
+ranking:
+  enabled: true
+  reset-day: MONDAY # Dia da semana para reset
+  reset-hour: 0 # Hora do dia para reset (0-23)
+  top-limit: 10 # Quantidade de jogadores no ranking
+  cache-duration: 300 # Segundos para manter cache do ranking
+
+pricing:
+  dynamic:
+    enabled: true
+    min-multiplier: 0.5 # Preço mínimo é 50% do preço base
+    max-multiplier: 2.0 # Preço máximo é 200% do preço base
+    decay-rate: 0.01 # Taxa de decaimento do preço
+    update-interval: 300 # Intervalo de atualização em segundos
+    logging:
+      enabled: true
+      log-price-changes: true
+      log-demand-updates: true
+      min-price-change-to-log: 0.05 # Só loga mudanças de preço maiores que 5%
+    demand:
+      max-demand: 1000 # Demanda máxima por item
+      reset-interval: 86400 # Resetar demanda a cada 24h (em segundos)
+      decay-enabled: true # Habilita decaimento natural da demanda
+
+cache:
+  enabled: true
+  refresh-interval: 300 # segundos
+  max-size: 1000 # itens
+  preload-categories: true
+
+error-handling:
+  inventory:
+    rollback-on-failure: true
+    save-failed-transactions: true
+  pricing:
+    fallback-to-base-price: true # Usa preço base se o cálculo dinâmico falhar
+    log-errors: true # Loga erros no sistema de preços
+# Configurações de banco de dados removidas pois não serão utilizadas

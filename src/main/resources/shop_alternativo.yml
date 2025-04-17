@@ -1,0 +1,13 @@
+# Arquivo shop.yml simplificado para testes
+categories:
+  armas:
+    name: "Armas"
+    icon: "DIAMOND_SWORD"
+    slot: 10
+    permission: ""
+    items:
+      espada:
+        name: "Espada de Diamante"
+        material: "DIAMOND_SWORD"
+        buy_price: 100
+        sell_price: 50

@@ -1,0 +1,123 @@
+# Configuração da loja PrimeLeagueShop
+# Categorias e itens disponíveis na loja
+
+categories:
+  armas:
+    name: "Armas"
+    icon: "DIAMOND_SWORD"
+    data: 0
+    slot: 10
+    permission: "primeleague.shop.weapons"
+    items:
+      espada_diamante:
+        name: "Espada de Diamante"
+        material: "DIAMOND_SWORD"
+        data: 0
+        buy_price: 500
+        sell_price: 250
+        permission: "primeleague.shop.weapons.diamond_sword"
+        lore:
+          - "&7Uma espada muito poderosa"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
+      arco:
+        name: "Arco"
+        material: "BOW"
+        data: 0
+        buy_price: 300
+        sell_price: 150
+        permission: ""
+        lore:
+          - "&7Um arco comum"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
+
+  armaduras:
+    name: "Armaduras"
+    icon: "DIAMOND_CHESTPLATE"
+    data: 0
+    slot: 12
+    permission: "primeleague.shop.armors"
+    items:
+      capacete:
+        name: "Capacete de Diamante"
+        material: "DIAMOND_HELMET"
+        data: 0
+        buy_price: 400
+        sell_price: 200
+        permission: ""
+        lore:
+          - "&7Protege sua cabeça"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
+      peitoral:
+        name: "Peitoral de Diamante"
+        material: "DIAMOND_CHESTPLATE"
+        data: 0
+        buy_price: 600
+        sell_price: 300
+        permission: ""
+        lore:
+          - "&7Protege seu tórax"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
+
+  pocoes:
+    name: "Poções"
+    icon: "POTION"
+    data: 0
+    slot: 14
+    permission: "primeleague.shop.potions"
+    items:
+      forca:
+        name: "Poção de Força"
+        material: "POTION"
+        data: 8201
+        buy_price: 100
+        sell_price: 50
+        permission: ""
+        lore:
+          - "&7Aumenta sua força"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
+      velocidade:
+        name: "Poção de Velocidade"
+        material: "POTION"
+        data: 8194
+        buy_price: 100
+        sell_price: 50
+        permission: ""
+        lore:
+          - "&7Aumenta sua velocidade"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
+
+  blocos:
+    name: "Blocos"
+    icon: "STONE"
+    data: 0
+    slot: 16
+    permission: "primeleague.shop.blocks"
+    items:
+      pedra:
+        name: "Pedra"
+        material: "STONE"
+        data: 0
+        buy_price: 10
+        sell_price: 5
+        permission: ""
+        lore:
+          - "&7Um bloco simples"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
+      obsidiana:
+        name: "Obsidiana"
+        material: "OBSIDIAN"
+        data: 0
+        buy_price: 50
+        sell_price: 25
+        permission: ""
+        lore:
+          - "&7Um bloco resistente"
+          - "&aPreço de compra: &f{buy_price}{currency}"
+          - "&cPreço de venda: &f{sell_price}{currency}"
