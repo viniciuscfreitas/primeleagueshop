@@ -9,6 +9,7 @@ import com.primeleague.shop.utils.TextUtils;
 import org.bukkit.entity.Player;
 
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Subcomando para listar itens disponíveis na loja
@@ -16,6 +17,7 @@ import java.util.List;
 public class ListSubCommand implements SubCommand {
 
   private final PrimeLeagueShopPlugin plugin;
+  private static final int ITEMS_PER_PAGE = 10;
 
   /**
    * Cria um novo subcomando
@@ -28,7 +30,7 @@ public class ListSubCommand implements SubCommand {
 
   @Override
   public String getName() {
-    return "list";
+    return ShopConstants.CMD_LIST;
   }
 
   @Override
@@ -46,21 +48,85 @@ public class ListSubCommand implements SubCommand {
       return true;
     }
 
-    player.sendMessage(TextUtils.colorize("&a=== Itens disponíveis na loja ==="));
-
+    // Cria uma lista com todos os itens e suas categorias
+    List<ItemDisplay> allItems = new ArrayList<>();
     for (ShopCategory category : categories) {
-      player.sendMessage(TextUtils.colorize("&e" + category.getName() + ":"));
-
       for (ShopItem item : category.getItems()) {
-        String buyPrice = item.getBuyPrice() > 0 ? String.format("%.2f", item.getBuyPrice()) : "N/A";
-        String sellPrice = item.getSellPrice() > 0 ? String.format("%.2f", item.getSellPrice()) : "N/A";
-
-        player.sendMessage(TextUtils.colorize("  &7- &f" + item.getName() +
-            " &7(Compra: &f" + buyPrice + plugin.getConfigLoader().getCurrencySymbol() +
-            "&7, Venda: &f" + sellPrice + plugin.getConfigLoader().getCurrencySymbol() + "&7)"));
+        allItems.add(new ItemDisplay(category.getName(), item));
       }
     }
 
+    // Calcula o número total de páginas
+    int totalPages = (int) Math.ceil((double) allItems.size() / ITEMS_PER_PAGE);
+
+    // Obtém a página desejada
+    int page = 1;
+    if (args.length > 1) {
+      try {
+        page = Integer.parseInt(args[1]);
+      } catch (NumberFormatException e) {
+        player.sendMessage(TextUtils.colorize("&cNúmero de página inválido!"));
+        return true;
+      }
+    }
+
+    // Valida a página
+    if (page < 1 || page > totalPages) {
+      player.sendMessage(TextUtils.colorize("&cPágina inválida! Total de páginas: &f" + totalPages));
+      return true;
+    }
+
+    // Calcula o início e fim da página
+    int startIndex = (page - 1) * ITEMS_PER_PAGE;
+    int endIndex = Math.min(startIndex + ITEMS_PER_PAGE, allItems.size());
+
+    // Mostra o cabeçalho
+    player.sendMessage(TextUtils.colorize("&a=== Itens disponíveis na loja (Página " + page + "/" + totalPages + ") ==="));
+
+    // Mostra os itens da página atual
+    String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
+    String lastCategory = null;
+
+    for (int i = startIndex; i < endIndex; i++) {
+      ItemDisplay display = allItems.get(i);
+
+      // Mostra o nome da categoria apenas quando muda
+      if (lastCategory == null || !lastCategory.equals(display.category)) {
+        player.sendMessage(TextUtils.colorize("&e" + display.category + ":"));
+        lastCategory = display.category;
+      }
+
+      String buyPrice = display.item.getBuyPrice() > 0 ? String.format("%.2f", display.item.getBuyPrice()) : "N/A";
+      String sellPrice = display.item.getSellPrice() > 0 ? String.format("%.2f", display.item.getSellPrice()) : "N/A";
+
+      player.sendMessage(TextUtils.colorize("  &7- &f" + display.item.getName() +
+          " &7(Compra: &f" + buyPrice + currencySymbol +
+          "&7, Venda: &f" + sellPrice + currencySymbol + "&7)"));
+    }
+
+    // Mostra navegação
+    if (totalPages > 1) {
+      StringBuilder nav = new StringBuilder("&7");
+      if (page > 1) {
+        nav.append("&a/loja lista ").append(page - 1).append(" &7<<< ");
+      }
+      nav.append("&fPágina ").append(page).append("/").append(totalPages);
+      if (page < totalPages) {
+        nav.append(" &7>>> &a/loja lista ").append(page + 1);
+      }
+      player.sendMessage(TextUtils.colorize(nav.toString()));
+    }
+
     return true;
+  }
+
+  private static class ItemDisplay {
+    final String category;
+    final ShopItem item;
+
+    ItemDisplay(String category, ShopItem item) {
+      this.category = category;
+      this.item = item;
+    }
   }
 }

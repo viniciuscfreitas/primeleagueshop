@@ -5,13 +5,14 @@ import com.primeleague.shop.gui.CategoryGUI;
 import com.primeleague.shop.gui.ConfirmationGUI;
 import com.primeleague.shop.gui.ShopGUI;
 import com.primeleague.shop.listeners.ShopInventoryListener;
+import com.primeleague.shop.listeners.ChatListener;
 import com.primeleague.shop.services.EconomyService;
 import com.primeleague.shop.services.ShopManager;
 import com.primeleague.shop.storage.ShopConfigLoader;
 import com.primeleague.shop.services.DynamicPricingService;
 import com.primeleague.shop.services.PlayerPreferencesManager;
 import com.primeleague.shop.services.TransactionHistoryManager;
-import com.primeleague.shop.services.RankingManager;
+import com.primeleague.shop.ranking.RankingManager;
 import com.primeleague.shop.services.FeedbackManager;
 import com.primeleague.shop.database.DatabaseManager;
 import com.primeleague.shop.utils.ShopConstants;
@@ -24,6 +25,11 @@ import com.primeleague.shop.storage.TransactionHistory;
 import com.primeleague.shop.utils.LogManager;
 import net.milkbowl.vault.economy.Economy;
 import org.bukkit.plugin.RegisteredServiceProvider;
+import com.primeleague.shop.services.FeedbackService;
+import com.primeleague.shop.services.FavoriteService;
+import com.primeleague.shop.tutorial.ShopTutorial;
+import com.primeleague.shop.services.ChatInputManager;
+import com.primeleague.shop.services.CartManager;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -31,6 +37,7 @@ import java.util.logging.Level;
 
 public class PrimeLeagueShopPlugin extends JavaPlugin {
 
+  private static PrimeLeagueShopPlugin instance;
   private ShopManager shopManager;
   private EconomyService economyService;
   private ShopConfigLoader configLoader;
@@ -50,139 +57,80 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
   private CategoryGUI categoryGUI;
   private ConfirmationGUI confirmationGUI;
 
-  @Override
-  public void onEnable() {
-    try {
-      // Cria o diretório do plugin se não existir
-      if (!getDataFolder().exists()) {
-        getDataFolder().mkdirs();
-      }
+  private FeedbackService feedbackService;
+  private FavoriteService favoriteService;
 
-      // Inicializa o gerenciador de logs primeiro
-      logManager = new LogManager(this);
+  private ShopTutorial shopTutorial;
 
-      // Inicializando os arquivos de configuração
-      saveDefaultConfig();
+  private ChatInputManager chatInputManager;
+  private CartManager cartManager;
 
-      // Lista de arquivos necessários
-      String[] configFiles = { "shop.yml", "messages.yml" };
-
-      for (String fileName : configFiles) {
-        if (!new java.io.File(getDataFolder(), fileName).exists()) {
-          saveResource(fileName, false);
-          logManager.log("Arquivo " + fileName + " criado com sucesso!", LogManager.LogType.SECURITY);
-        }
-      }
-
-      // Carregando configurações
-      configLoader = new ShopConfigLoader(this);
-      if (!configLoader.loadAll()) {
-        logManager.logError("Erro ao carregar configurações!", null);
-        getServer().getPluginManager().disablePlugin(this);
-        return;
-      }
-
-      // Verifica se os arquivos foram carregados corretamente
-      if (!validateConfigs()) {
-        logManager.logError("Arquivos de configuração inválidos!", null);
-        getServer().getPluginManager().disablePlugin(this);
-        return;
-      }
-
-      // Iniciando banco de dados se necessário
-      if (getConfig().getBoolean("settings.transaction.log-to-database", false)) {
-        databaseManager = new DatabaseManager(this);
-      }
-
-      // Inicializa serviços
-      if (!setupEconomy()) {
-        getLogger().severe("Vault não encontrado! Desabilitando plugin...");
-        getServer().getPluginManager().disablePlugin(this);
-        return;
-      }
-
-      // Iniciando serviços
-      long startTime = System.currentTimeMillis();
-
-      economyService = new EconomyService(this);
-      pricingService = new DynamicPricingService(this);
-      preferencesManager = new PlayerPreferencesManager(this);
-      historyManager = new TransactionHistoryManager(this);
-      rankingManager = new RankingManager(this);
-      feedbackManager = new FeedbackManager(this);
-      combatManager = new CombatManager(this);
-      transactionHistory = new TransactionHistory(this);
-
-      // Iniciando shop manager após outros serviços
-      shopManager = new ShopManager(this, economy);
-
-      // Iniciando GUIs
-      shopGUI = new ShopGUI(this);
-      categoryGUI = new CategoryGUI(this);
-      confirmationGUI = new ConfirmationGUI(this);
-
-      // Registrando comandos
-      getCommand("shop").setExecutor(new ShopCommand(this));
-
-      // Registrando eventos
-      PluginManager pm = getServer().getPluginManager();
-      pm.registerEvents(new ShopInventoryListener(this), this);
-      pm.registerEvents(new PlayerListener(this), this);
-      pm.registerEvents(new CombatListener(this), this);
-
-      // Inicia tarefas de limpeza
-      startCleanupTasks();
-
-      long duration = System.currentTimeMillis() - startTime;
-      logManager.logPerformance("Inicialização do plugin", duration);
-
-      logManager.log("PrimeLeagueShop ativado com sucesso!", LogManager.LogType.SECURITY);
-
-    } catch (Exception e) {
-      logManager.logError("Erro ao inicializar o plugin", e);
-      getServer().getPluginManager().disablePlugin(this);
-    }
+  public static PrimeLeagueShopPlugin getInstance() {
+    return instance;
   }
 
-  private void startCleanupTasks() {
-    // Executa limpeza a cada 5 minutos
-    getServer().getScheduler().runTaskTimerAsynchronously(this, new Runnable() {
-      @Override
-      public void run() {
-        combatManager.cleanup();
-        preferencesManager.runCacheCleanup();
-        shopManager.runCacheCleanup();
-        transactionHistory.cleanup();
-      }
-    }, 6000L, 6000L); // 5 minutos = 6000 ticks
+  @Override
+  public void onEnable() {
+    instance = this;
+
+    // Inicializa gerenciadores
+    this.configLoader = new ShopConfigLoader(this);
+    this.configLoader.loadAll();
+
+    // Setup economia
+    if (!setupEconomy()) {
+      getLogger().severe("Vault não encontrado! Desabilitando plugin...");
+      getServer().getPluginManager().disablePlugin(this);
+      return;
+    }
+
+    // Inicializa serviços
+    this.economyService = new EconomyService(this);
+    this.shopManager = new ShopManager(this, economy);
+    this.chatInputManager = new ChatInputManager();
+    this.cartManager = new CartManager(this);
+    this.transactionHistory = new TransactionHistory(this);
+    this.pricingService = new DynamicPricingService(this);
+    this.preferencesManager = new PlayerPreferencesManager(this);
+    this.historyManager = new TransactionHistoryManager(this);
+    this.feedbackManager = new FeedbackManager(this);
+    this.logManager = new LogManager(this);
+
+    // Carrega dados
+    shopManager.reloadCategories();
+
+    // Inicializa GUIs primeiro
+    this.shopGUI = new ShopGUI(this);
+    this.categoryGUI = new CategoryGUI(this);
+    this.confirmationGUI = new ConfirmationGUI(this);
+
+    // Registra eventos depois das GUIs
+    getServer().getPluginManager().registerEvents(new ShopInventoryListener(this), this);
+    getServer().getPluginManager().registerEvents(new ChatListener(this), this);
+
+    // Registra comandos
+    getCommand("shop").setExecutor(new ShopCommand(this));
+
+    transactionHistory.initializeDatabase();
+
+    // Inicializa o RankingManager
+    rankingManager = new RankingManager(this);
+
+    getLogger().info("Plugin habilitado com sucesso!");
   }
 
   @Override
   public void onDisable() {
-    // Salvando dados pendentes
+    // Desliga os serviços
     if (shopManager != null) {
       shopManager.shutdown();
     }
-    if (historyManager != null) {
-      historyManager.shutdown();
-    }
-    if (rankingManager != null) {
-      rankingManager.shutdown();
-    }
-    if (preferencesManager != null) {
-      preferencesManager.saveAll();
-    }
-    if (databaseManager != null) {
-      databaseManager.close();
-    }
+
     if (transactionHistory != null) {
       transactionHistory.close();
     }
-    if (logManager != null) {
-      logManager.shutdown();
-    }
 
-    logManager.log("PrimeLeagueShop desativado com sucesso!", LogManager.LogType.SECURITY);
+    getLogger().info(ShopConstants.LOG_PLUGIN_DISABLED);
   }
 
   /**
@@ -312,5 +260,25 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
 
   public Economy getEconomy() {
     return economy;
+  }
+
+  public FeedbackService getFeedbackService() {
+    return feedbackService;
+  }
+
+  public FavoriteService getFavoriteService() {
+    return favoriteService;
+  }
+
+  public ShopTutorial getShopTutorial() {
+    return shopTutorial;
+  }
+
+  public ChatInputManager getChatInputManager() {
+    return chatInputManager;
+  }
+
+  public CartManager getCartManager() {
+    return cartManager;
   }
 }

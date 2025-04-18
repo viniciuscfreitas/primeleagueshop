@@ -1,8 +1,5 @@
 package com.primeleague.shop.events;
 
-import com.primeleague.shop.models.ShopItem;
-import com.primeleague.shop.models.Transaction;
-import org.bukkit.entity.Player;
 import org.bukkit.event.Cancellable;
 import org.bukkit.event.Event;
 import org.bukkit.event.HandlerList;
@@ -15,32 +12,29 @@ public class ShopPreTransactionEvent extends Event implements Cancellable {
 
   private static final HandlerList handlers = new HandlerList();
 
-  private final Player player;
-  private final ShopItem item;
-  private int quantity;
-  private double totalPrice;
-  private final Transaction.TransactionType type;
   private boolean cancelled;
-  private String cancelReason;
+  private final String playerName;
+  private final String itemName;
+  private final int quantity;
+  private final double price;
+  private final boolean isBuy;
 
   /**
    * Cria um novo evento de pré-transação
    *
-   * @param player     Jogador
-   * @param item       Item da transação
+   * @param playerName Nome do jogador
+   * @param itemName   Nome do item
    * @param quantity   Quantidade
-   * @param totalPrice Preço total
-   * @param type       Tipo de transação
+   * @param price      Preço
+   * @param isBuy      true se for compra, false se for venda
    */
-  public ShopPreTransactionEvent(Player player, ShopItem item, int quantity, double totalPrice,
-      Transaction.TransactionType type) {
-    this.player = player;
-    this.item = item;
+  public ShopPreTransactionEvent(String playerName, String itemName, int quantity, double price, boolean isBuy) {
+    this.playerName = playerName;
+    this.itemName = itemName;
     this.quantity = quantity;
-    this.totalPrice = totalPrice;
-    this.type = type;
+    this.price = price;
+    this.isBuy = isBuy;
     this.cancelled = false;
-    this.cancelReason = "";
   }
 
   @Override
@@ -63,42 +57,21 @@ public class ShopPreTransactionEvent extends Event implements Cancellable {
   }
 
   /**
-   * Define o motivo do cancelamento
+   * Obtém o nome do jogador que está realizando a transação
    *
-   * @param reason Motivo
+   * @return Nome do jogador
    */
-  public void setCancelReason(String reason) {
-    this.cancelReason = reason;
-    if (reason != null && !reason.isEmpty()) {
-      setCancelled(true);
-    }
+  public String getPlayerName() {
+    return playerName;
   }
 
   /**
-   * Obtém o motivo do cancelamento
+   * Obtém o nome do item da transação
    *
-   * @return Motivo ou string vazia
+   * @return Nome do item
    */
-  public String getCancelReason() {
-    return cancelReason;
-  }
-
-  /**
-   * Obtém o jogador que está realizando a transação
-   *
-   * @return Jogador
-   */
-  public Player getPlayer() {
-    return player;
-  }
-
-  /**
-   * Obtém o item da transação
-   *
-   * @return Item
-   */
-  public ShopItem getItem() {
-    return item;
+  public String getItemName() {
+    return itemName;
   }
 
   /**
@@ -111,55 +84,12 @@ public class ShopPreTransactionEvent extends Event implements Cancellable {
   }
 
   /**
-   * Define a quantidade da transação
+   * Obtém o preço da transação
    *
-   * @param quantity Nova quantidade
+   * @return Preço
    */
-  public void setQuantity(int quantity) {
-    if (quantity <= 0)
-      throw new IllegalArgumentException("Quantidade deve ser positiva");
-    this.quantity = quantity;
-    recalculatePrice();
-  }
-
-  /**
-   * Obtém o preço total da transação
-   *
-   * @return Preço total
-   */
-  public double getTotalPrice() {
-    return totalPrice;
-  }
-
-  /**
-   * Define o preço total da transação
-   *
-   * @param totalPrice Novo preço total
-   */
-  public void setTotalPrice(double totalPrice) {
-    if (totalPrice < 0)
-      throw new IllegalArgumentException("Preço deve ser não-negativo");
-    this.totalPrice = totalPrice;
-  }
-
-  /**
-   * Recalcula o preço baseado na quantidade
-   */
-  private void recalculatePrice() {
-    if (type == Transaction.TransactionType.BUY) {
-      this.totalPrice = item.getBuyPrice() * quantity;
-    } else {
-      this.totalPrice = item.getSellPrice() * quantity;
-    }
-  }
-
-  /**
-   * Obtém o tipo da transação
-   *
-   * @return Tipo de transação
-   */
-  public Transaction.TransactionType getType() {
-    return type;
+  public double getPrice() {
+    return price;
   }
 
   /**
@@ -167,8 +97,8 @@ public class ShopPreTransactionEvent extends Event implements Cancellable {
    *
    * @return true se for compra
    */
-  public boolean isBuyTransaction() {
-    return type == Transaction.TransactionType.BUY;
+  public boolean isBuy() {
+    return isBuy;
   }
 
   /**
@@ -176,7 +106,7 @@ public class ShopPreTransactionEvent extends Event implements Cancellable {
    *
    * @return true se for venda
    */
-  public boolean isSellTransaction() {
-    return type == Transaction.TransactionType.SELL;
+  public boolean isSell() {
+    return !isBuy;
   }
 }

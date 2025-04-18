@@ -51,6 +51,16 @@ public class ShopInventoryListener implements Listener {
     String title = event.getView().getTitle();
     Inventory clickedInventory = event.getInventory();
 
+    // Debug log
+    plugin.getLogger().info("Processando clique de inventário para " + player.getName() + " em " + title);
+
+    // Verifica se as GUIs foram inicializadas
+    if (shopGUI == null || categoryGUI == null || confirmationGUI == null) {
+      plugin.getLogger().severe("Uma ou mais GUIs não foram inicializadas corretamente!");
+      event.setCancelled(true);
+      return;
+    }
+
     // Proteção para GUI de confirmação
     if (title.equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.confirm_buy_title", "&8Confirmar Compra"))) ||
         title.equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.confirm_sell_title", "&8Confirmar Venda")))) {

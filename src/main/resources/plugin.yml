@@ -8,9 +8,9 @@ commands:
   shop:
     description: Comando principal da loja
     usage: |
-      §e/shop §7- Abre a loja
-      §e/shop history §7- Mostra histórico de transações
-      §e/shop top [buy|sell] §7- Mostra ranking de compradores/vendedores
+      §e/loja §7- Abre a loja
+      §e/loja historico §7- Mostra histórico de transações
+      §e/loja top [compras|vendas] §7- Mostra ranking de compradores/vendedores
     aliases: [loja]
 
 permissions:

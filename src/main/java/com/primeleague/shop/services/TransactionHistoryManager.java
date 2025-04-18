@@ -1,7 +1,6 @@
 package com.primeleague.shop.services;
 
 import com.primeleague.shop.PrimeLeagueShopPlugin;
-import com.primeleague.shop.models.ShopItem;
 import com.primeleague.shop.utils.ShopConstants;
 import java.util.Map;
 import java.util.HashMap;
@@ -22,15 +21,15 @@ public class TransactionHistoryManager {
 
   private static class Transaction {
     private final String playerName;
-    private final String itemId;
+    private final String itemName;
     private final int quantity;
     private final double price;
     private final boolean isBuy;
     private final long timestamp;
 
-    public Transaction(String playerName, String itemId, int quantity, double price, boolean isBuy) {
+    public Transaction(String playerName, String itemName, int quantity, double price, boolean isBuy) {
       this.playerName = playerName;
-      this.itemId = itemId;
+      this.itemName = itemName;
       this.quantity = quantity;
       this.price = price;
       this.isBuy = isBuy;
@@ -48,10 +47,10 @@ public class TransactionHistoryManager {
     }
   }
 
-  public void recordTransaction(String playerName, ShopItem item, int quantity, double price, boolean isBuy) {
+  public void recordTransaction(String playerName, String itemName, int quantity, double price, boolean isBuy) {
     final Transaction transaction = new Transaction(
         playerName,
-        item.getMaterial().name() + ":" + item.getData(),
+        itemName,
         quantity,
         price,
         isBuy);
@@ -85,7 +84,7 @@ public class TransactionHistoryManager {
             "CREATE TABLE IF NOT EXISTS shop_transactions (" +
                 "id INT AUTO_INCREMENT PRIMARY KEY, " +
                 "player VARCHAR(16) NOT NULL, " +
-                "item_id VARCHAR(64) NOT NULL, " +
+                "item_name VARCHAR(64) NOT NULL, " +
                 "quantity INT NOT NULL, " +
                 "price DOUBLE NOT NULL, " +
                 "is_buy BOOLEAN NOT NULL, " +
@@ -107,11 +106,11 @@ public class TransactionHistoryManager {
 
     try (Connection conn = plugin.getConnection();
         PreparedStatement stmt = conn.prepareStatement(
-            "INSERT INTO shop_transactions (player, item_id, quantity, price, is_buy, timestamp) " +
+            "INSERT INTO shop_transactions (player, item_name, quantity, price, is_buy, timestamp) " +
                 "VALUES (?, ?, ?, ?, ?, ?)")) {
 
       stmt.setString(1, transaction.playerName);
-      stmt.setString(2, transaction.itemId);
+      stmt.setString(2, transaction.itemName);
       stmt.setInt(3, transaction.quantity);
       stmt.setDouble(4, transaction.price);
       stmt.setBoolean(5, transaction.isBuy);

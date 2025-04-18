@@ -1,6 +1,6 @@
 package com.primeleague.shop.models;
 
-import java.sql.Timestamp;
+import java.util.UUID;
 
 /**
  * Representa uma transação na loja
@@ -14,42 +14,75 @@ public class Transaction {
     BUY, SELL
   }
 
-  private String playerName;
-  private ShopItem item;
-  private int quantity;
-  private double price;
-  private TransactionType type;
-  private Timestamp timestamp;
+  private final UUID id;
+  private final String playerName;
+  private final String itemName;
+  private final int quantity;
+  private final double price;
+  private final boolean isBuy;
+  private final long timestamp;
   private boolean success;
 
   /**
    * Cria uma nova transação
    *
    * @param playerName Nome do jogador
-   * @param item       Item da transação
+   * @param itemName   Nome do item
    * @param quantity   Quantidade
    * @param price      Preço
-   * @param type       Tipo de transação (compra/venda)
-   * @param timestamp  Timestamp da transação
+   * @param isBuy      true se for compra, false se for venda
    */
-  public Transaction(String playerName, ShopItem item, int quantity, double price, TransactionType type, Timestamp timestamp) {
+  public Transaction(String playerName, String itemName, int quantity, double price, boolean isBuy) {
+    this.id = UUID.randomUUID();
     this.playerName = playerName;
-    this.item = item;
+    this.itemName = itemName;
     this.quantity = quantity;
     this.price = price;
-    this.type = type;
+    this.isBuy = isBuy;
+    this.timestamp = System.currentTimeMillis();
+    this.success = false;
+  }
+
+  /**
+   * Cria uma nova transação com timestamp específico
+   */
+  public Transaction(String playerName, String itemName, int quantity, double price, long timestamp, boolean isBuy) {
+    this.id = UUID.randomUUID();
+    this.playerName = playerName;
+    this.itemName = itemName;
+    this.quantity = quantity;
+    this.price = price;
+    this.isBuy = isBuy;
     this.timestamp = timestamp;
+    this.success = false;
+  }
+
+  /**
+   * Cria uma nova transação com item e tipo
+   */
+  public Transaction(String playerName, ShopItem item, int quantity, double price, TransactionType type, java.sql.Timestamp timestamp) {
+    this.id = UUID.randomUUID();
+    this.playerName = playerName;
+    this.itemName = item.getName();
+    this.quantity = quantity;
+    this.price = price;
+    this.isBuy = type == TransactionType.BUY;
+    this.timestamp = timestamp.getTime();
     this.success = false;
   }
 
   // Getters
 
+  public UUID getId() {
+    return id;
+  }
+
   public String getPlayerName() {
     return playerName;
   }
 
-  public ShopItem getItem() {
-    return item;
+  public String getItemName() {
+    return itemName;
   }
 
   public int getQuantity() {
@@ -60,11 +93,11 @@ public class Transaction {
     return price;
   }
 
-  public TransactionType getType() {
-    return type;
+  public boolean isBuy() {
+    return isBuy;
   }
 
-  public Timestamp getTimestamp() {
+  public long getTimestamp() {
     return timestamp;
   }
 
@@ -85,7 +118,7 @@ public class Transaction {
    * @return true se for compra, false se for venda
    */
   public boolean isBuyTransaction() {
-    return type == TransactionType.BUY;
+    return isBuy;
   }
 
   /**
@@ -94,7 +127,7 @@ public class Transaction {
    * @return true se for venda, false se for compra
    */
   public boolean isSellTransaction() {
-    return type == TransactionType.SELL;
+    return !isBuy;
   }
 
   public void setSuccess(boolean success) {
@@ -106,9 +139,9 @@ public class Transaction {
     return String.format("[%s] %s %s %dx %s por $%.2f",
         timestamp,
         playerName,
-        (type == TransactionType.BUY ? "comprou" : "vendeu"),
+        (isBuy ? "comprou" : "vendeu"),
         quantity,
-        item.getName(),
+        itemName,
         getTotalPrice());
   }
 
@@ -130,6 +163,22 @@ public class Transaction {
    */
   public boolean isSuccessful() {
     return success;
+  }
+
+  /**
+   * Retorna o tipo da transação
+   * @return TransactionType.BUY se for compra, TransactionType.SELL se for venda
+   */
+  public TransactionType getType() {
+    return isBuy ? TransactionType.BUY : TransactionType.SELL;
+  }
+
+  /**
+   * Retorna o nome do item da transação
+   * @return nome do item
+   */
+  public String getItem() {
+    return itemName;
   }
 }
 

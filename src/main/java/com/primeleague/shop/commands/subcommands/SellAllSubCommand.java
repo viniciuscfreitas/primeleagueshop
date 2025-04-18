@@ -25,7 +25,7 @@ public class SellAllSubCommand implements SubCommand {
 
     @Override
     public String getName() {
-        return "sellall";
+        return ShopConstants.CMD_SELLALL;
     }
 
     @Override
@@ -105,11 +105,7 @@ public class SellAllSubCommand implements SubCommand {
             plugin.getTransactionHistory().addTransaction(transaction);
 
             // Atualiza o ranking
-            plugin.getRankingManager().updateStats(
-                player.getName(),
-                itemTotal,
-                false
-            );
+            plugin.getRankingManager().addTransaction(transaction);
 
             // Mostra mensagem para cada item vendido
             player.sendMessage(TextUtils.colorize(String.format(

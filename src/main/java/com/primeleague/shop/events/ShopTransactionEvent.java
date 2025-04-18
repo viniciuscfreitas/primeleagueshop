@@ -1,8 +1,5 @@
 package com.primeleague.shop.events;
 
-import com.primeleague.shop.models.ShopItem;
-import com.primeleague.shop.models.Transaction;
-import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.HandlerList;
 
@@ -13,42 +10,27 @@ public class ShopTransactionEvent extends Event {
 
   private static final HandlerList handlers = new HandlerList();
 
-  private final Player player;
-  private final ShopItem item;
+  private final String playerName;
+  private final String itemName;
   private final int quantity;
-  private final double totalPrice;
-  private final Transaction.TransactionType type;
+  private final double price;
+  private final boolean isBuy;
 
   /**
    * Cria um novo evento de transação
    *
-   * @param player     Jogador
-   * @param item       Item da transação
+   * @param playerName Nome do jogador
+   * @param itemName   Nome do item
    * @param quantity   Quantidade
-   * @param totalPrice Preço total
-   * @param type       Tipo de transação
+   * @param price      Preço
+   * @param isBuy      true se for compra, false se for venda
    */
-  public ShopTransactionEvent(Player player, ShopItem item, int quantity, double totalPrice,
-      Transaction.TransactionType type) {
-    this.player = player;
-    this.item = item;
+  public ShopTransactionEvent(String playerName, String itemName, int quantity, double price, boolean isBuy) {
+    this.playerName = playerName;
+    this.itemName = itemName;
     this.quantity = quantity;
-    this.totalPrice = totalPrice;
-    this.type = type;
-  }
-
-  /**
-   * Cria um novo evento de transação a partir de um objeto Transaction
-   *
-   * @param player      Jogador
-   * @param transaction Transação
-   */
-  public ShopTransactionEvent(Player player, Transaction transaction) {
-    this.player = player;
-    this.item = transaction.getItem();
-    this.quantity = transaction.getQuantity();
-    this.totalPrice = transaction.getTotalPrice();
-    this.type = transaction.getType();
+    this.price = price;
+    this.isBuy = isBuy;
   }
 
   @Override
@@ -61,21 +43,21 @@ public class ShopTransactionEvent extends Event {
   }
 
   /**
-   * Obtém o jogador que realizou a transação
+   * Obtém o nome do jogador que realizou a transação
    *
-   * @return Jogador
+   * @return Nome do jogador
    */
-  public Player getPlayer() {
-    return player;
+  public String getPlayerName() {
+    return playerName;
   }
 
   /**
-   * Obtém o item da transação
+   * Obtém o nome do item da transação
    *
-   * @return Item
+   * @return Nome do item
    */
-  public ShopItem getItem() {
-    return item;
+  public String getItemName() {
+    return itemName;
   }
 
   /**
@@ -92,17 +74,8 @@ public class ShopTransactionEvent extends Event {
    *
    * @return Preço total
    */
-  public double getTotalPrice() {
-    return totalPrice;
-  }
-
-  /**
-   * Obtém o tipo da transação
-   *
-   * @return Tipo da transação
-   */
-  public Transaction.TransactionType getType() {
-    return type;
+  public double getPrice() {
+    return price;
   }
 
   /**
@@ -110,8 +83,8 @@ public class ShopTransactionEvent extends Event {
    *
    * @return true se for compra
    */
-  public boolean isBuyTransaction() {
-    return type == Transaction.TransactionType.BUY;
+  public boolean isBuy() {
+    return isBuy;
   }
 
   /**
@@ -119,7 +92,7 @@ public class ShopTransactionEvent extends Event {
    *
    * @return true se for venda
    */
-  public boolean isSellTransaction() {
-    return type == Transaction.TransactionType.SELL;
+  public boolean isSell() {
+    return !isBuy;
   }
 }

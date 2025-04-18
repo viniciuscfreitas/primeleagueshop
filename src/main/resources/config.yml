@@ -82,3 +82,176 @@ error-handling:
     fallback-to-base-price: true # Usa preço base se o cálculo dinâmico falhar
     log-errors: true # Loga erros no sistema de preços
 # Configurações de banco de dados removidas pois não serão utilizadas
+
+messages:
+  purchase-success: "&aVocê comprou &6{item} &apor &6{price} coins&a!"
+  purchase-error: "&cErro na compra: {reason}"
+  insufficient-funds: "&cVocê não tem coins suficientes! Necessário: &6{price} &c| Seu saldo: &6{balance}"
+  inventory-full: "&cSeu inventário está cheio!"
+  item-preview: "&6=== Preview do Item ===\n&eNome: &f{item}\n&eDescrição: &f{description}\n&ePreço: &6{price} coins"
+  favorite-added: "&aItem &6{item} &aadicionado aos favoritos!"
+  favorite-removed: "&cItem &6{item} &cremovido dos favoritos!"
+  tutorial:
+    welcome: "&6Bem-vindo à Loja! &eUse os comandos abaixo para navegar:"
+    commands:
+      - "&e/shop &7- Abre a loja principal"
+      - "&e/shop preview <item> &7- Mostra detalhes do item"
+      - "&e/shop favorites &7- Lista seus itens favoritos"
+      - "&e/shop buy <item> &7- Compra um item específico"
+
+categories:
+  combate:
+    title: "&cCombate"
+    icon: DIAMOND_SWORD
+    description:
+      - "&7Itens para PvP"
+      - "&7Espadas, armaduras e mais"
+    items:
+      # Espadas
+      - DIAMOND_SWORD
+      - IRON_SWORD
+      - STONE_SWORD
+      - WOODEN_SWORD
+      # Armaduras de Diamante (IDs antigos)
+      - "310" # DIAMOND_HELMET
+      - "311" # DIAMOND_CHESTPLATE
+      - "312" # DIAMOND_LEGGINGS
+      - "313" # DIAMOND_BOOTS
+      # Armaduras de Ferro (IDs antigos)
+      - "306" # IRON_HELMET
+      - "307" # IRON_CHESTPLATE
+      - "308" # IRON_LEGGINGS
+      - "309" # IRON_BOOTS
+      # Armaduras de Ouro (IDs antigos)
+      - "314" # GOLD_HELMET
+      - "315" # GOLD_CHESTPLATE
+      - "316" # GOLD_LEGGINGS
+      - "317" # GOLD_BOOTS
+      # Armaduras de Couro (IDs antigos)
+      - "298" # LEATHER_HELMET
+      - "299" # LEATHER_CHESTPLATE
+      - "300" # LEATHER_LEGGINGS
+      - "301" # LEATHER_BOOTS
+      # Arcos e Flechas
+      - BOW
+      - ARROW
+
+  blocos:
+    title: "&eBlocos"
+    icon: STONE
+    description:
+      - "&7Blocos para construção"
+      - "&7Pedras, madeiras e decorativos"
+    items:
+      - STONE
+      - COBBLESTONE
+      - WOOD
+      - PLANKS
+      - GLASS
+      - SANDSTONE
+      - BRICK
+      - WOOL
+      - OBSIDIAN
+
+  minerios:
+    title: "&bMinérios"
+    icon: DIAMOND_ORE
+    description:
+      - "&7Minérios e seus blocos"
+      - "&7Recursos valiosos"
+    items:
+      - DIAMOND_ORE
+      - DIAMOND_BLOCK
+      - IRON_ORE
+      - IRON_BLOCK
+      - GOLD_ORE
+      - GOLD_BLOCK
+      - EMERALD_ORE
+      - EMERALD_BLOCK
+      - LAPIS_ORE
+      - LAPIS_BLOCK
+      - REDSTONE_ORE
+      - REDSTONE_BLOCK
+
+  ferramentas:
+    title: "&6Ferramentas"
+    icon: DIAMOND_PICKAXE
+    description:
+      - "&7Ferramentas para mineração"
+      - "&7e outros trabalhos"
+    items:
+      - DIAMOND_PICKAXE
+      - DIAMOND_AXE
+      - DIAMOND_SHOVEL
+      - DIAMOND_HOE
+      - IRON_PICKAXE
+      - IRON_AXE
+      - IRON_SHOVEL
+      - IRON_HOE
+      - SHEARS
+      - FISHING_ROD
+
+  alimentos:
+    title: "&aAlimentos"
+    icon: COOKED_BEEF
+    description:
+      - "&7Comidas e bebidas"
+      - "&7para restaurar fome"
+    items:
+      - COOKED_BEEF
+      - COOKED_CHICKEN
+      - COOKED_PORKCHOP
+      - BREAD
+      - APPLE
+      - GOLDEN_APPLE
+      - CAKE
+      - COOKIE
+      - MELON
+      - CARROT
+      - POTATO
+
+  pocoes:
+    title: "&5Poções"
+    icon: POTION
+    description:
+      - "&7Poções mágicas"
+      - "&7e seus ingredientes"
+    items:
+      - POTION
+      - SPLASH_POTION
+      - NETHER_WART
+      - BLAZE_POWDER
+      - FERMENTED_SPIDER_EYE
+      - GLISTERING_MELON
+      - MAGMA_CREAM
+      - GHAST_TEAR
+      - BREWING_STAND
+
+  ovos:
+    title: "&dOvos"
+    icon: SPAWN_EGG
+    description:
+      - "&7Ovos de spawn"
+      - "&7de todas as criaturas"
+    items:
+      - CREEPER_SPAWN_EGG
+      - ZOMBIE_SPAWN_EGG
+      - SKELETON_SPAWN_EGG
+      - SPIDER_SPAWN_EGG
+      - COW_SPAWN_EGG
+      - SHEEP_SPAWN_EGG
+      - PIG_SPAWN_EGG
+      - CHICKEN_SPAWN_EGG
+
+  livros:
+    title: "&3Livros"
+    icon: ENCHANTED_BOOK
+    description:
+      - "&7Livros encantados"
+      - "&7e materiais mágicos"
+    items:
+      - ENCHANTED_BOOK
+      - BOOK
+      - BOOKSHELF
+      - EXPERIENCE_BOTTLE
+      - LAPIS_LAZULI

@@ -3,6 +3,7 @@ package com.primeleague.shop.models;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import com.primeleague.shop.utils.TextUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -55,11 +56,13 @@ public class ShopCategory {
     ItemStack icon = new ItemStack(iconMaterial, 1, iconData);
     ItemMeta meta = icon.getItemMeta();
 
-    meta.setDisplayName("§r" + name);
+    meta.setDisplayName(TextUtils.colorize("&a" + name));
 
     List<String> lore = new ArrayList<>();
-    lore.add("§7Clique para ver os itens");
-    lore.add("§7Itens disponíveis: §e" + items.size());
+    lore.add(TextUtils.colorize("&7Clique para ver os itens"));
+    lore.add(TextUtils.colorize("&7desta categoria"));
+    lore.add("");
+    lore.add(TextUtils.colorize("&7Total de itens: &f" + items.size()));
 
     meta.setLore(lore);
     icon.setItemMeta(meta);

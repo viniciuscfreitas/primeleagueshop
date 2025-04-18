@@ -21,6 +21,12 @@ public class ItemUtils {
    */
   public static Material getMaterialByName(String name) {
     try {
+      // Tenta converter para ID numérico primeiro
+      if (name.matches("\\d+")) {
+        int id = Integer.parseInt(name);
+        return Material.getMaterial(id);
+      }
+      // Se não for número, tenta pelo nome
       return Material.valueOf(name.toUpperCase());
     } catch (IllegalArgumentException e) {
       return Material.STONE;
@@ -30,43 +36,44 @@ public class ItemUtils {
   /**
    * Cria um ItemStack com nome e lore
    *
-   * @param material Material
-   * @param data     Data value
-   * @param amount   Quantidade
-   * @param name     Nome do item
-   * @param lore     Lore do item
-   * @return ItemStack criado
+   * @param material Material do item
+   * @param data     Data value do item
+   * @param amount   Quantidade do item
+   * @param name     Nome do item (pode ser null)
+   * @param lore     Descrição do item (pode ser null)
+   * @return ItemStack configurado
    */
   public static ItemStack createItem(Material material, byte data, int amount, String name, List<String> lore) {
     ItemStack item = new ItemStack(material, amount, data);
     ItemMeta meta = item.getItemMeta();
 
-    if (name != null && !name.isEmpty()) {
-      meta.setDisplayName(TextUtils.colorize(name));
-    }
-
-    if (lore != null && !lore.isEmpty()) {
-      List<String> coloredLore = new ArrayList<>();
-      for (String line : lore) {
-        coloredLore.add(TextUtils.colorize(line));
+    if (meta != null) {
+      if (name != null && !name.isEmpty()) {
+        meta.setDisplayName(TextUtils.colorize(name));
       }
-      meta.setLore(coloredLore);
+
+      if (lore != null && !lore.isEmpty()) {
+        meta.setLore(TextUtils.colorizeList(lore));
+      }
+
+      item.setItemMeta(meta);
     }
 
-    item.setItemMeta(meta);
     return item;
   }
 
   /**
    * Cria um ItemStack com nome
-   *
-   * @param material Material
-   * @param data     Data value
-   * @param name     Nome do item
-   * @return ItemStack criado
    */
   public static ItemStack createItem(Material material, byte data, String name) {
     return createItem(material, data, 1, name, null);
+  }
+
+  /**
+   * Cria um ItemStack com nome e lore em array
+   */
+  public static ItemStack createItem(Material material, String name, String[] lore) {
+    return createItem(material, (byte) 0, 1, name, lore != null ? Arrays.asList(lore) : null);
   }
 
   /**
@@ -110,21 +117,6 @@ public class ItemUtils {
     return material != null ? material : Material.STONE;
   }
 
-  public static ItemStack createItem(Material material, String name, String[] lore) {
-    ItemStack item = new ItemStack(material);
-    ItemMeta meta = item.getItemMeta();
-
-    if (meta != null) {
-      meta.setDisplayName(TextUtils.colorize(name));
-      if (lore != null) {
-        meta.setLore(TextUtils.colorizeList(Arrays.asList(lore)));
-      }
-      item.setItemMeta(meta);
-    }
-
-    return item;
-  }
-
   public static ItemStack createItem(Material material, String name, List<String> lore) {
     ItemStack item = new ItemStack(material);
     ItemMeta meta = item.getItemMeta();
@@ -141,32 +133,17 @@ public class ItemUtils {
     return item;
   }
 
-  public static void updateLore(ItemStack item, String[] lore) {
-    if (item == null)
-      return;
+  /**
+   * Atualiza o lore de um ItemStack
+   */
+  public static void updateLore(ItemStack item, List<String> lore) {
+    if (item == null) return;
 
     ItemMeta meta = item.getItemMeta();
     if (meta != null) {
-      meta.setLore(TextUtils.colorizeList(Arrays.asList(lore)));
+      meta.setLore(lore != null ? TextUtils.colorizeList(lore) : null);
       item.setItemMeta(meta);
     }
-  }
-
-  public static void updateLore(ItemStack item, List<String> lore) {
-    if (item == null)
-      return;
-
-    ItemMeta meta = item.getItemMeta();
-    if (meta == null)
-      return;
-
-    if (lore != null) {
-      meta.setLore(TextUtils.colorizeList(lore));
-    } else {
-      meta.setLore(null);
-    }
-
-    item.setItemMeta(meta);
   }
 
   private ItemUtils() {

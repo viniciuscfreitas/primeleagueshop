@@ -56,7 +56,8 @@ public class ShopItem {
    * @return ItemStack configurado
    */
   public ItemStack createDisplayItem(String currencySymbol) {
-    ItemStack item = new ItemStack(material);
+    // Cria o item usando o material
+    ItemStack item = new ItemStack(material, 1, data);
     ItemMeta meta = item.getItemMeta();
     meta.setDisplayName(TextUtils.colorize("&f" + displayName));
     List<String> lore = new ArrayList<>();

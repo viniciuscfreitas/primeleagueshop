@@ -3,6 +3,13 @@ package com.primeleague.shop.storage;
 import com.primeleague.shop.PrimeLeagueShopPlugin;
 import com.primeleague.shop.models.Transaction;
 import com.primeleague.shop.models.ShopItem;
+import com.primeleague.shop.utils.TextUtils;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,15 +19,37 @@ public class TransactionHistory {
   private final PrimeLeagueShopPlugin plugin;
   private final String dbFile;
   private Connection connection;
+  private boolean initialized;
 
   public TransactionHistory(PrimeLeagueShopPlugin plugin) {
     this.plugin = plugin;
     this.dbFile = "jdbc:sqlite:" + plugin.getDataFolder().getPath() + "/transactions.db";
-    initializeDatabase();
+    this.initialized = false;
+
+    // Tenta inicializar o banco de dados de forma assíncrona
+    plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+      try {
+        initializeDatabase();
+        initialized = true;
+        plugin.getLogger().info("Histórico de transações inicializado com sucesso!");
+      } catch (Exception e) {
+        plugin.getLogger().severe("Erro ao inicializar histórico de transações: " + e.getMessage());
+      }
+    });
   }
 
-  private void initializeDatabase() {
+  public boolean isInitialized() {
+    return initialized;
+  }
+
+  public void initializeDatabase() {
     try {
+      // Verifica se o ShopManager está disponível
+      if (plugin.getShopManager() == null) {
+        plugin.getLogger().severe("ShopManager não está disponível. Inicialização do histórico de transações abortada.");
+        return;
+      }
+
       Class.forName("org.sqlite.JDBC");
       if (connection == null || connection.isClosed()) {
         connection = DriverManager.getConnection(dbFile);
@@ -38,52 +67,21 @@ public class TransactionHistory {
             String itemName = rs.getString("item_name");
             int quantity = rs.getInt("quantity");
             double price = rs.getDouble("price");
-            String type = rs.getString("type");
+            boolean isBuy = rs.getString("type").equals("BUY");
             long timestamp = rs.getLong("timestamp");
 
-            // Tenta ler material e data se existirem
-            String material = null;
-            byte data = 0;
-            try {
-              material = rs.getString("item_material");
-              data = rs.getByte("item_data");
-              plugin.getLogger().info("[Debug] Lendo transação - Material: " + material + ", Data: " + data);
-            } catch (SQLException e) {
-              plugin.getLogger().info("[Debug] Colunas item_material/item_data não encontradas, usando valores padrão");
-            }
-
-            // Tenta encontrar o item
-            ShopItem item = null;
-            if (material != null) {
-              plugin.getLogger().info("[Debug] Tentando encontrar item por material: " + material);
-              item = plugin.getShopManager().getItemByMaterialAndData(material, data);
-              if (item == null) {
-                plugin.getLogger().info("[Debug] Item não encontrado por material, tentando por nome: " + itemName);
-                item = plugin.getShopManager().findItemByName(itemName);
-              }
-            } else {
-              plugin.getLogger().info("[Debug] Material nulo, tentando encontrar por nome: " + itemName);
-              item = plugin.getShopManager().findItemByName(itemName);
-            }
-
-            if (item != null) {
-              plugin.getLogger().info("[Debug] Item encontrado: " + item.getName());
-              Transaction transaction = new Transaction(
-                playerName,
-                item,
-                quantity,
-                price,
-                Transaction.TransactionType.valueOf(type),
-                new Timestamp(timestamp)
-              );
-              existingTransactions.add(transaction);
-            } else {
-              plugin.getLogger().warning("[Debug] Item não encontrado para transação - Nome: " + itemName + ", Material: " + material);
-            }
+            Transaction transaction = new Transaction(
+              playerName,
+              itemName,
+              quantity,
+              price,
+              timestamp,
+              isBuy
+            );
+            existingTransactions.add(transaction);
           } catch (Exception e) {
             plugin.getLogger().warning("Erro ao ler transação existente: " + e.getMessage());
             plugin.getLogger().warning("Detalhes do erro: " + e.toString());
-            e.printStackTrace();
           }
         }
         rs.close();
@@ -99,8 +97,6 @@ public class TransactionHistory {
           "CREATE TABLE transactions (" +
               "id INTEGER PRIMARY KEY AUTOINCREMENT," +
               "player_name TEXT NOT NULL," +
-              "item_material TEXT NOT NULL," +
-              "item_data INTEGER NOT NULL," +
               "item_name TEXT NOT NULL," +
               "quantity INTEGER NOT NULL," +
               "price REAL NOT NULL," +
@@ -116,21 +112,18 @@ public class TransactionHistory {
 
       // Reinsere os dados antigos
       if (!existingTransactions.isEmpty()) {
-        String insertSql = "INSERT INTO transactions (player_name, item_material, item_data, item_name, quantity, price, type, timestamp, success) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String insertSql = "INSERT INTO transactions (player_name, item_name, quantity, price, type, timestamp, success) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
         PreparedStatement pstmt = connection.prepareStatement(insertSql);
         for (Transaction transaction : existingTransactions) {
-          ShopItem item = transaction.getItem();
           pstmt.setString(1, transaction.getPlayerName());
-          pstmt.setString(2, item.getMaterial().name());
-          pstmt.setInt(3, item.getData());
-          pstmt.setString(4, item.getName());
-          pstmt.setInt(5, transaction.getQuantity());
-          pstmt.setDouble(6, transaction.getPrice());
-          pstmt.setString(7, transaction.getType().toString());
-          pstmt.setLong(8, transaction.getTimestamp().getTime());
-          pstmt.setBoolean(9, transaction.isSuccessful());
+          pstmt.setString(2, transaction.getItemName());
+          pstmt.setInt(3, transaction.getQuantity());
+          pstmt.setDouble(4, transaction.getPrice());
+          pstmt.setString(5, transaction.isBuy() ? "BUY" : "SELL");
+          pstmt.setLong(6, transaction.getTimestamp());
+          pstmt.setBoolean(7, transaction.isSuccessful());
 
           try {
             pstmt.executeUpdate();
@@ -142,39 +135,40 @@ public class TransactionHistory {
       }
 
       stmt.close();
-      plugin.getLogger().info("Banco de dados inicializado com sucesso!");
     } catch (Exception e) {
       plugin.getLogger().log(Level.SEVERE, "Erro ao inicializar banco de dados", e);
     }
   }
 
   public void addTransaction(Transaction transaction) {
+    if (!initialized) {
+        plugin.getLogger().warning("Tentativa de adicionar transação antes da inicialização do banco de dados");
+        return;
+    }
+
     try {
-      if (connection == null || connection.isClosed()) {
-        connection = DriverManager.getConnection(dbFile);
-      }
+        if (connection == null || connection.isClosed()) {
+            connection = DriverManager.getConnection(dbFile);
+        }
 
-      String sql = "INSERT INTO transactions (player_name, item_material, item_data, item_name, quantity, price, type, timestamp, success) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO transactions (player_name, item_name, quantity, price, type, timestamp, success) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?)";
 
-      PreparedStatement stmt = connection.prepareStatement(sql);
-      ShopItem item = transaction.getItem();
-      stmt.setString(1, transaction.getPlayerName());
-      stmt.setString(2, item.getMaterial().name());
-      stmt.setInt(3, item.getData());
-      stmt.setString(4, item.getName());
-      stmt.setInt(5, transaction.getQuantity());
-      stmt.setDouble(6, transaction.getPrice());
-      stmt.setString(7, transaction.getType().toString());
-      stmt.setLong(8, System.currentTimeMillis());
-      stmt.setBoolean(9, transaction.isSuccessful());
+        PreparedStatement stmt = connection.prepareStatement(sql);
+        stmt.setString(1, transaction.getPlayerName());
+        stmt.setString(2, transaction.getItemName());
+        stmt.setInt(3, transaction.getQuantity());
+        stmt.setDouble(4, transaction.getPrice());
+        stmt.setString(5, transaction.isBuy() ? "BUY" : "SELL");
+        stmt.setLong(6, transaction.getTimestamp());
+        stmt.setBoolean(7, transaction.isSuccessful());
 
-      stmt.executeUpdate();
-      stmt.close();
+        stmt.executeUpdate();
+        stmt.close();
     } catch (SQLException e) {
-      plugin.getLogger().log(Level.WARNING, "Erro ao salvar transação", e);
-      // Se falhou, tenta reinicializar o banco
-      initializeDatabase();
+        plugin.getLogger().log(Level.WARNING, "Erro ao salvar transação", e);
+        // Se falhou, tenta reinicializar o banco
+        initializeDatabase();
     }
   }
 
@@ -185,62 +179,54 @@ public class TransactionHistory {
   public List<Transaction> getPlayerHistory(String playerName, int limit) {
     List<Transaction> history = new ArrayList<>();
 
+    if (!initialized) {
+        plugin.getLogger().warning("Tentativa de acessar histórico antes da inicialização do banco de dados");
+        return history;
+    }
+
     try {
-      if (connection == null || connection.isClosed()) {
-        connection = DriverManager.getConnection(dbFile);
-      }
-
-      PreparedStatement stmt = connection.prepareStatement(
-          "SELECT * FROM transactions WHERE player_name = ? ORDER BY timestamp DESC LIMIT ?");
-
-      stmt.setString(1, playerName);
-      stmt.setInt(2, limit);
-      ResultSet rs = stmt.executeQuery();
-
-      while (rs.next()) {
-        try {
-          String itemMaterial = rs.getString("item_material");
-          if (itemMaterial == null) {
-            plugin.getLogger().warning("Material nulo encontrado para transação ID: " + rs.getInt("id"));
-            continue;
-          }
-
-          byte itemData = rs.getByte("item_data");
-          ShopItem item = plugin.getShopManager().getItemByMaterialAndData(itemMaterial, itemData);
-
-          if (item == null) {
-            plugin.getLogger().warning("Item não encontrado para material: " + itemMaterial + " com data: " + itemData);
-            continue;
-          }
-
-          Transaction transaction = new Transaction(
-              rs.getString("player_name"),
-              item,
-              rs.getInt("quantity"),
-              rs.getDouble("price"),
-              Transaction.TransactionType.valueOf(rs.getString("type")),
-              new Timestamp(rs.getLong("timestamp"))
-          );
-
-          try {
-            transaction.setSuccess(rs.getBoolean("success"));
-          } catch (SQLException e) {
-            // Se a coluna success não existir, assume false
-            transaction.setSuccess(false);
-          }
-
-          history.add(transaction);
-        } catch (Exception e) {
-          plugin.getLogger().warning("Erro ao processar transação: " + e.getMessage());
-          continue;
+        if (connection == null || connection.isClosed()) {
+            connection = DriverManager.getConnection(dbFile);
         }
-      }
 
-      rs.close();
-      stmt.close();
+        PreparedStatement stmt = connection.prepareStatement(
+            "SELECT * FROM transactions WHERE player_name = ? ORDER BY timestamp DESC LIMIT ?");
+
+        stmt.setString(1, playerName);
+        stmt.setInt(2, limit);
+        ResultSet rs = stmt.executeQuery();
+
+        while (rs.next()) {
+            try {
+                String itemName = rs.getString("item_name");
+                int quantity = rs.getInt("quantity");
+                double price = rs.getDouble("price");
+                boolean isBuy = rs.getString("type").equals("BUY");
+                long timestamp = rs.getLong("timestamp");
+
+                Transaction transaction = new Transaction(
+                    playerName,
+                    itemName,
+                    quantity,
+                    price,
+                    timestamp,
+                    isBuy
+                );
+
+                if (rs.getBoolean("success")) {
+                    transaction.markSuccessful();
+                }
+
+                history.add(transaction);
+            } catch (Exception e) {
+                plugin.getLogger().warning("Erro ao ler transação: " + e.getMessage());
+            }
+        }
+
+        rs.close();
+        stmt.close();
     } catch (SQLException e) {
-      plugin.getLogger().severe("Erro ao carregar histórico de transações: " + e.getMessage());
-      e.printStackTrace();
+        plugin.getLogger().log(Level.WARNING, "Erro ao buscar histórico", e);
     }
 
     return history;
@@ -248,14 +234,16 @@ public class TransactionHistory {
 
   public void cleanup() {
     try {
-      // Remove transações antigas (mais de 30 dias)
-      PreparedStatement stmt = connection.prepareStatement(
-          "DELETE FROM transactions WHERE timestamp < ?");
-      stmt.setLong(1, System.currentTimeMillis() - (30L * 24L * 60L * 60L * 1000L));
-      stmt.executeUpdate();
-      stmt.close();
+      if (connection != null && !connection.isClosed()) {
+        // Remove transações antigas (mais de 30 dias)
+        PreparedStatement stmt = connection.prepareStatement(
+            "DELETE FROM transactions WHERE timestamp < ?");
+        stmt.setLong(1, System.currentTimeMillis() - (30L * 24L * 60L * 60L * 1000L));
+        stmt.executeUpdate();
+        stmt.close();
+      }
     } catch (SQLException e) {
-      plugin.getLogger().log(Level.WARNING, "Erro na limpeza do histórico", e);
+      plugin.getLogger().log(Level.WARNING, "Erro ao limpar transações antigas", e);
     }
   }
 
@@ -269,27 +257,30 @@ public class TransactionHistory {
     }
   }
 
-  public void saveTransaction(Transaction transaction) throws SQLException {
-    if (connection == null || connection.isClosed()) {
-      connection = DriverManager.getConnection(dbFile);
+  public void openHistory(Player player) {
+    List<Transaction> transactions = getPlayerHistory(player.getName(), 45);
+
+    Inventory inv = Bukkit.createInventory(null, 54, TextUtils.colorize("&8Histórico de Transações"));
+
+    int slot = 0;
+    for (Transaction transaction : transactions) {
+      ItemStack item = new ItemStack(Material.PAPER);
+      ItemMeta meta = item.getItemMeta();
+
+      String type = transaction.isBuy() ? "&aCompra" : "&cVenda";
+      meta.setDisplayName(TextUtils.colorize(type + " - " + transaction.getItemName()));
+
+      List<String> lore = new ArrayList<>();
+      lore.add(TextUtils.colorize("&7Quantidade: &f" + transaction.getQuantity()));
+      lore.add(TextUtils.colorize("&7Preço: &f$" + transaction.getPrice()));
+      lore.add(TextUtils.colorize("&7Data: &f" + new java.util.Date(transaction.getTimestamp())));
+
+      meta.setLore(lore);
+      item.setItemMeta(meta);
+
+      inv.setItem(slot++, item);
     }
 
-    String sql = "INSERT INTO transactions (player_name, item_material, item_data, item_name, quantity, price, type, timestamp, success) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-
-    try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-      ShopItem item = transaction.getItem();
-      stmt.setString(1, transaction.getPlayerName());
-      stmt.setString(2, item.getMaterial().name());
-      stmt.setInt(3, item.getData());
-      stmt.setString(4, item.getName());
-      stmt.setInt(5, transaction.getQuantity());
-      stmt.setDouble(6, transaction.getUnitPrice());
-      stmt.setString(7, transaction.getType().name());
-      stmt.setLong(8, System.currentTimeMillis());
-      stmt.setBoolean(9, transaction.isSuccessful());
-
-      stmt.executeUpdate();
-    }
+    player.openInventory(inv);
   }
 }
