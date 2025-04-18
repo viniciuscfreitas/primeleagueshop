@@ -22,6 +22,7 @@ public class ShopInventoryListener implements Listener {
   private final ShopGUI shopGUI;
   private final CategoryGUI categoryGUI;
   private final ConfirmationGUI confirmationGUI;
+  private boolean isChangingInventory = false;
 
   /**
    * Cria um novo listener
@@ -48,6 +49,18 @@ public class ShopInventoryListener implements Listener {
 
     Player player = (Player) event.getWhoClicked();
     String title = event.getView().getTitle();
+    Inventory clickedInventory = event.getInventory();
+
+    // Proteção para GUI de confirmação
+    if (title.equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.confirm_buy_title", "&8Confirmar Compra"))) ||
+        title.equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.confirm_sell_title", "&8Confirmar Venda")))) {
+      event.setCancelled(true);
+
+      if (clickedInventory != null && clickedInventory.equals(event.getView().getTopInventory())) {
+        plugin.getConfirmationGUI().handleClick(player, event.getSlot(), event.isShiftClick());
+      }
+      return;
+    }
 
     // Verifica se é um inventário da loja
     if (!isShopInventory(title)) {
@@ -58,8 +71,7 @@ public class ShopInventoryListener implements Listener {
     event.setCancelled(true);
 
     // Se o clique foi no inventário do jogador, ignora
-    Inventory clicked = event.getInventory();
-    if (clicked == null || clicked.equals(player.getInventory())) {
+    if (clickedInventory == null || clickedInventory.equals(player.getInventory())) {
       return;
     }
 
@@ -67,23 +79,31 @@ public class ShopInventoryListener implements Listener {
     plugin.getLogger().info(String.format("Clique processado: Slot=%d, LeftClick=%b, ShiftClick=%b",
         event.getSlot(), event.isLeftClick(), event.isShiftClick()));
 
-    // Processa o clique baseado no tipo de GUI
-    if (title.equals(
-        TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.main_shop_title", "&8Loja Prime League")))) {
-      shopGUI.handleClick(player, event.getSlot());
-    } else if (title
-        .contains(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.category_title", "&8Categoria:")))) {
-      categoryGUI.handleClick(
-          player,
-          event.getSlot(),
-          event.isLeftClick(),
-          event.isShiftClick());
-    } else if (title
-        .equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.confirmation_title", "&8Confirmar")))) {
-      confirmationGUI.handleClick(
-          player,
-          event.getSlot(),
-          event.isLeftClick());
+    // Marca que está trocando de inventário antes de processar o clique
+    isChangingInventory = true;
+
+    try {
+      // Processa o clique baseado no tipo de GUI
+      if (title.equals(
+          TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.main_shop_title", "&8Loja Prime League")))) {
+        shopGUI.handleClick(player, event.getSlot());
+      } else if (title
+          .contains(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.category_title", "&8Categoria:")))) {
+        categoryGUI.handleClick(
+            player,
+            event.getSlot(),
+            event.isLeftClick(),
+            event.isShiftClick());
+      } else if (title
+          .equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.confirmation_title", "&8Confirmar")))) {
+        confirmationGUI.handleClick(
+            player,
+            event.getSlot(),
+            event.isLeftClick());
+      }
+    } finally {
+      // Reseta a flag após processar o clique
+      isChangingInventory = false;
     }
   }
 
@@ -94,7 +114,11 @@ public class ShopInventoryListener implements Listener {
     }
 
     String title = event.getView().getTitle();
-    if (isShopInventory(title)) {
+
+    // Cancela drag em qualquer GUI da loja
+    if (title.equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.confirm_title", "&8Confirmar Compra"))) ||
+        title.equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.category_title", "&8{category}"))) ||
+        title.equals(TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.main_title", "&8Loja")))) {
       event.setCancelled(true);
     }
   }
@@ -122,7 +146,7 @@ public class ShopInventoryListener implements Listener {
    *
    * @param event Evento de fechamento de inventário
    */
-  @EventHandler
+  @EventHandler(priority = EventPriority.MONITOR)
   public void onInventoryClose(InventoryCloseEvent event) {
     if (!(event.getPlayer() instanceof Player)) {
       return;
@@ -131,10 +155,15 @@ public class ShopInventoryListener implements Listener {
     Player player = (Player) event.getPlayer();
     String title = event.getView().getTitle();
 
-    // Limpa dados do jogador quando ele fecha o inventário
-    if (isShopInventory(title)) {
+    plugin.getLogger().info(String.format("Inventário fechado para %s: %s", player.getName(), title));
+
+    // Só limpa os dados se não estiver trocando de inventário
+    if (isShopInventory(title) && !isChangingInventory) {
+      plugin.getLogger().info("Limpando dados do jogador " + player.getName());
       categoryGUI.removePlayerData(player);
       confirmationGUI.removePlayerData(player);
+    } else {
+      plugin.getLogger().info("Mantendo dados do jogador " + player.getName() + " durante troca de inventário");
     }
   }
 
@@ -143,9 +172,12 @@ public class ShopInventoryListener implements Listener {
    *
    * @param event Evento de saída do jogador
    */
-  @EventHandler
+  @EventHandler(priority = EventPriority.MONITOR)
   public void onPlayerQuit(PlayerQuitEvent event) {
     Player player = event.getPlayer();
+    plugin.getLogger().info("Jogador desconectou: " + player.getName());
+
+    // Limpa os dados do jogador quando ele desconecta
     categoryGUI.removePlayerData(player);
     confirmationGUI.removePlayerData(player);
   }
@@ -161,11 +193,14 @@ public class ShopInventoryListener implements Listener {
         .colorize(plugin.getConfigLoader().getMessage("gui.main_shop_title", "&8Loja Prime League"));
     String categoryTitle = TextUtils
         .colorize(plugin.getConfigLoader().getMessage("gui.category_title", "&8Categoria:"));
-    String confirmationTitle = TextUtils
-        .colorize(plugin.getConfigLoader().getMessage("gui.confirmation_title", "&8Confirmar"));
+    String confirmBuyTitle = TextUtils
+        .colorize(plugin.getConfigLoader().getMessage("gui.confirm_buy_title", "&8Confirmar Compra"));
+    String confirmSellTitle = TextUtils
+        .colorize(plugin.getConfigLoader().getMessage("gui.confirm_sell_title", "&8Confirmar Venda"));
 
     return title.equals(mainShopTitle) ||
         title.contains(categoryTitle) ||
-        title.equals(confirmationTitle);
+        title.equals(confirmBuyTitle) ||
+        title.equals(confirmSellTitle);
   }
 }

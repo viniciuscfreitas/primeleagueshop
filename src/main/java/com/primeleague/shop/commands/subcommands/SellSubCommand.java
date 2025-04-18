@@ -44,8 +44,24 @@ public class SellSubCommand implements SubCommand {
       return true;
     }
 
-    // Obtém o nome do item
-    String itemName = args[1];
+    // Junta todos os argumentos do nome do item até encontrar um número
+    StringBuilder itemNameBuilder = new StringBuilder();
+    int quantityIndex = -1;
+
+    for (int i = 1; i < args.length; i++) {
+      try {
+        int testNumber = Integer.parseInt(args[i]);
+        quantityIndex = i;
+        break;
+      } catch (NumberFormatException e) {
+        if (itemNameBuilder.length() > 0) {
+          itemNameBuilder.append(" ");
+        }
+        itemNameBuilder.append(args[i]);
+      }
+    }
+
+    String itemName = itemNameBuilder.toString();
     ShopItem item = plugin.getShopManager().findItemByName(itemName);
 
     if (item == null) {
@@ -56,9 +72,9 @@ public class SellSubCommand implements SubCommand {
 
     // Obtém a quantidade
     int quantity = 1;
-    if (args.length >= 3) {
+    if (quantityIndex != -1 && quantityIndex < args.length) {
       try {
-        quantity = Integer.parseInt(args[2]);
+        quantity = Integer.parseInt(args[quantityIndex]);
 
         int maxSellQuantity = plugin.getConfigLoader().getMaxSellQuantity();
         if (quantity <= 0 || quantity > maxSellQuantity) {
@@ -75,8 +91,14 @@ public class SellSubCommand implements SubCommand {
       }
     }
 
-    // Executa a venda
-    plugin.getShopManager().sellItem(player, item, quantity);
+    // Mostra uma mensagem de confirmação antes de abrir a GUI
+    player.sendMessage(TextUtils.colorize("&aAbrindo confirmação de venda para &f" +
+        item.getName() + " &a(Preço: &f" +
+        String.format("%.2f", item.getSellPrice()) +
+        plugin.getConfigLoader().getCurrencySymbol() + "&a)"));
+
+    // Abre a GUI de confirmação de venda
+    plugin.getConfirmationGUI().openBuyConfirmation(player, item, false);
     return true;
   }
 }

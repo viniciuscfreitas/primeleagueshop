@@ -3,155 +3,286 @@ package com.primeleague.shop.gui;
 import com.primeleague.shop.PrimeLeagueShopPlugin;
 import com.primeleague.shop.models.ShopItem;
 import com.primeleague.shop.models.Transaction;
-import com.primeleague.shop.utils.ItemUtils;
 import com.primeleague.shop.utils.TextUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.ChatColor;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.sql.Timestamp;
 
-/**
- * Cria e gerencia a GUI de confirmação de compra/venda
- */
+import com.primeleague.shop.utils.ShopConstants;
+import com.primeleague.shop.utils.ItemBuilder;
+
 public class ConfirmationGUI {
-
   private final PrimeLeagueShopPlugin plugin;
   private final Map<UUID, ConfirmationData> playerData;
-  private static final int ROWS = 3;
-  private static final int CONFIRM_SLOT = 11;
-  private static final int CANCEL_SLOT = 15;
-  private static final int INFO_SLOT = 13;
 
-  /**
-   * Cria uma nova GUI de confirmação
-   *
-   * @param plugin Instância do plugin
-   */
+  private static class ConfirmationData {
+    private final ShopItem item;
+    private int quantity;
+    private final boolean isBuying;
+
+    public ConfirmationData(ShopItem item, int quantity, boolean isBuying) {
+      this.item = item;
+      this.quantity = quantity;
+      this.isBuying = isBuying;
+    }
+  }
+
   public ConfirmationGUI(PrimeLeagueShopPlugin plugin) {
     this.plugin = plugin;
     this.playerData = new HashMap<>();
   }
 
-  /**
-   * Abre a GUI de confirmação para um jogador
-   *
-   * @param player   Jogador
-   * @param item     Item selecionado
-   * @param quantity Quantidade inicial
-   * @param isBuying Se é uma compra (true) ou venda (false)
-   */
-  public void openConfirmationGUI(Player player, ShopItem item, int quantity, boolean isBuying) {
-    String title = plugin.getConfigLoader().getMessage("gui.confirmation_title", "&8Confirmar");
-    title = TextUtils.colorize(title);
+  public void openBuyConfirmation(Player player, ShopItem item, boolean isBuying) {
+    Inventory inv = Bukkit.createInventory(null, 36, TextUtils.colorize("&8Confirmar " + (isBuying ? "Compra" : "Venda")));
+    String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
 
-    Inventory inventory = Bukkit.createInventory(null, ROWS * 9, title);
-    playerData.put(player.getUniqueId(), new ConfirmationData(item, quantity, isBuying, title));
+    // Item central
+    ItemStack displayItem = item.createDisplayItem(currencySymbol);
+    ItemMeta meta = displayItem.getItemMeta();
+    List<String> lore = meta.getLore();
+    lore.add("");
+    lore.add(TextUtils.colorize("&aQuantidade: &f1"));
+    double totalPrice = isBuying ? item.getBuyPrice() : item.getSellPrice();
+    lore.add(TextUtils.colorize("&aPreço total: &f" + currencySymbol + String.format("%.2f", totalPrice)));
+    meta.setLore(lore);
+    displayItem.setItemMeta(meta);
+    inv.setItem(ShopConstants.INFO_SLOT, displayItem);
 
-    // Item de informação
-    ItemStack infoItem = item.createDisplayItem(plugin.getConfigLoader().getCurrencySymbol());
-    ItemUtils.updateLore(infoItem, getInfoLore(item, quantity, isBuying));
-    inventory.setItem(INFO_SLOT, infoItem);
+    // Botão de confirmar
+    ItemStack confirmButton = createConfirmButton();
+    inv.setItem(ShopConstants.CONFIRM_BUTTON_SLOT, confirmButton);
 
-    // Botão confirmar
-    ItemStack confirmItem = ItemUtils.createItem(
-        Material.EMERALD_BLOCK,
-        "&aConfirmar",
-        getConfirmLore(item, quantity, isBuying));
-    inventory.setItem(CONFIRM_SLOT, confirmItem);
+    // Botão de cancelar
+    ItemStack cancelButton = createCancelButton();
+    inv.setItem(ShopConstants.CANCEL_BUTTON_SLOT, cancelButton);
 
-    // Botão cancelar
-    ItemStack cancelItem = ItemUtils.createItem(
-        Material.REDSTONE_BLOCK,
-        "&cCancelar",
-        (List<String>) null);
-    inventory.setItem(CANCEL_SLOT, cancelItem);
+    // Botão de aumentar quantidade
+    ItemStack increaseButton = createIncreaseButton();
+    inv.setItem(ShopConstants.INCREASE_SLOT, increaseButton);
 
-    player.openInventory(inventory);
+    // Botão de diminuir quantidade
+    ItemStack decreaseButton = createDecreaseButton();
+    inv.setItem(ShopConstants.DECREASE_SLOT, decreaseButton);
+
+    // Preenche slots vazios
+    ItemStack fillerItem = createQuantityItem(1);
+    for (int i = 0; i < inv.getSize(); i++) {
+      if (inv.getItem(i) == null) {
+        inv.setItem(i, fillerItem);
+      }
+    }
+
+    // Salva dados do jogador
+    playerData.put(player.getUniqueId(), new ConfirmationData(item, 1, isBuying));
+    player.openInventory(inv);
   }
 
-  /**
-   * Processa um clique na GUI de confirmação
-   *
-   * @param player      Jogador
-   * @param slot        Slot clicado
-   * @param isLeftClick true se o clique foi feito com o botão esquerdo
-   */
-  public void handleClick(Player player, int slot, boolean isLeftClick) {
+  public void handleClick(Player player, int slot, boolean isShiftClick) {
+    // Cancela qualquer tentativa de mover itens
+    if (slot < 0 || slot >= 36) {
+        return;
+    }
+
     ConfirmationData data = playerData.get(player.getUniqueId());
-    if (data == null)
-      return;
+    if (data == null) {
+        player.closeInventory();
+        return;
+    }
 
-    if (slot == CONFIRM_SLOT) {
-      processTransaction(player, data);
-    } else if (slot == CANCEL_SLOT) {
-      player.closeInventory();
+    String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
+
+    switch (slot) {
+        case ShopConstants.CONFIRM_BUTTON_SLOT:
+            if (data.isBuying) {
+                if (plugin.getShopManager().processPurchase(player, data.item, data.quantity)) {
+                    // Registra a transação no histórico
+                    Transaction transaction = new Transaction(
+                        player.getName(),
+                        data.item,
+                        data.quantity,
+                        data.item.getBuyPrice(),
+                        Transaction.TransactionType.BUY,
+                        new Timestamp(System.currentTimeMillis())
+                    );
+                    transaction.markSuccessful();
+                    plugin.getTransactionHistory().addTransaction(transaction);
+
+                    // Atualiza o ranking
+                    plugin.getRankingManager().updateStats(
+                        player.getName(),
+                        data.item.getBuyPrice() * data.quantity,
+                        true
+                    );
+
+                    player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("purchase_success",
+                        "&aVocê comprou &e{quantity}x {item} &apor &e{currency}{price}")
+                        .replace("{quantity}", String.valueOf(data.quantity))
+                        .replace("{item}", data.item.getName())
+                        .replace("{currency}", currencySymbol)
+                        .replace("{price}", String.format("%.2f", data.item.getBuyPrice() * data.quantity))));
+                }
+            } else {
+                if (plugin.getShopManager().processSale(player, data.item, data.quantity)) {
+                    // Registra a transação no histórico
+                    Transaction transaction = new Transaction(
+                        player.getName(),
+                        data.item,
+                        data.quantity,
+                        data.item.getSellPrice(),
+                        Transaction.TransactionType.SELL,
+                        new Timestamp(System.currentTimeMillis())
+                    );
+                    transaction.markSuccessful();
+                    plugin.getTransactionHistory().addTransaction(transaction);
+
+                    // Atualiza o ranking
+                    plugin.getRankingManager().updateStats(
+                        player.getName(),
+                        data.item.getSellPrice() * data.quantity,
+                        false
+                    );
+
+                    player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("sale_success",
+                        "&aVocê vendeu &e{quantity}x {item} &apor &e{currency}{price}")
+                        .replace("{quantity}", String.valueOf(data.quantity))
+                        .replace("{item}", data.item.getName())
+                        .replace("{currency}", currencySymbol)
+                        .replace("{price}", String.format("%.2f", data.item.getSellPrice() * data.quantity))));
+                }
+            }
+            player.closeInventory();
+            playerData.remove(player.getUniqueId());
+            break;
+
+        case ShopConstants.CANCEL_BUTTON_SLOT:
+            player.closeInventory();
+            playerData.remove(player.getUniqueId());
+            player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("transaction_cancelled",
+                "&cTransação cancelada.")));
+            break;
+
+        case ShopConstants.DECREASE_SLOT:
+            if (data.quantity > 1) {
+                int decrease = isShiftClick ? 10 : 1;
+                data.quantity = Math.max(1, data.quantity - decrease);
+                updateQuantity(player, data);
+            }
+            break;
+
+        case ShopConstants.INCREASE_SLOT:
+            int maxQuantity = data.isBuying ?
+                plugin.getConfigLoader().getMaxBuyQuantity() :
+                plugin.getConfigLoader().getMaxSellQuantity();
+            int increase = isShiftClick ? 10 : 1;
+            data.quantity = Math.min(maxQuantity, data.quantity + increase);
+            updateQuantity(player, data);
+            break;
+
+        default:
+            // Cancela qualquer outro clique para evitar remoção de itens
+            break;
     }
   }
 
-  private void processTransaction(Player player, ConfirmationData data) {
-    Transaction transaction = new Transaction(
-        player.getName(),
-        data.item,
-        data.quantity,
-        data.isBuying ? data.item.getBuyPrice() : data.item.getSellPrice(),
-        data.isBuying ? Transaction.TransactionType.BUY : Transaction.TransactionType.SELL);
+  private void updateQuantity(Player player, ConfirmationData data) {
+    Inventory inv = player.getOpenInventory().getTopInventory();
+    String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
 
-    if (data.isBuying) {
-      plugin.getShopManager().processBuy(player, transaction);
-    } else {
-      plugin.getShopManager().processSell(player, transaction);
-    }
+    // Atualiza item central usando createDisplayItem
+    ItemStack displayItem = data.item.createDisplayItem(currencySymbol);
+    ItemMeta meta = displayItem.getItemMeta();
+    List<String> lore = meta.getLore();
 
-    player.closeInventory();
+    // Adiciona informações da transação
+    lore.add("");
+    lore.add(TextUtils.colorize("&aQuantidade: &f" + data.quantity));
+    double totalPrice = data.isBuying ? data.item.getBuyPrice() * data.quantity : data.item.getSellPrice() * data.quantity;
+    lore.add(TextUtils.colorize("&aPreço total: &f" + currencySymbol + String.format("%.2f", totalPrice)));
+
+    meta.setLore(lore);
+    displayItem.setItemMeta(meta);
+    displayItem.setAmount(data.quantity);
+    inv.setItem(ShopConstants.QUANTITY_SLOT, displayItem);
+
+    // Atualiza botão de confirmar
+    ItemStack confirmButton = inv.getItem(ShopConstants.CONFIRM_BUTTON_SLOT);
+    ItemMeta confirmMeta = confirmButton.getItemMeta();
+    List<String> confirmLore = new ArrayList<>();
+    confirmLore.add(TextUtils.colorize("&7Clique para confirmar"));
+    confirmLore.add(TextUtils.colorize("&7a " + (data.isBuying ? "compra" : "venda") + " de &f" + data.quantity + "x"));
+    confirmLore.add(TextUtils.colorize("&7" + data.item.getName()));
+    confirmLore.add(TextUtils.colorize("&7por &f" + currencySymbol + String.format("%.2f", totalPrice)));
+    confirmMeta.setLore(confirmLore);
+    confirmButton.setItemMeta(confirmMeta);
   }
 
-  private String[] getInfoLore(ShopItem item, int quantity, boolean isBuying) {
-    double price = isBuying ? item.getBuyPrice() : item.getSellPrice();
-    double totalPrice = price * quantity;
-    String action = isBuying ? "Comprar" : "Vender";
-    return new String[] {
-        "§7Quantidade: §f" + quantity,
-        "§7Preço unitário: §f$" + String.format("%.2f", price),
-        "§7Total: §f$" + String.format("%.2f", totalPrice),
-        "",
-        "§eClique em confirmar para " + action.toLowerCase()
-    };
+  public void cleanup() {
+    playerData.clear();
   }
 
-  private String[] getConfirmLore(ShopItem item, int quantity, boolean isBuying) {
-    double price = isBuying ? item.getBuyPrice() : item.getSellPrice();
-    double totalPrice = price * quantity;
-    String action = isBuying ? "Comprar" : "Vender";
-    return new String[] {
-        "§7" + action + " §f" + quantity + "x " + item.getName(),
-        "§7por §f$" + String.format("%.2f", totalPrice)
-    };
-  }
-
+  /**
+   * Remove os dados de um jogador
+   * @param player Jogador para remover os dados
+   */
   public void removePlayerData(Player player) {
     playerData.remove(player.getUniqueId());
   }
 
-  /**
-   * Classe para armazenar dados de confirmação
-   */
-  private static class ConfirmationData {
-    private final ShopItem item;
-    private int quantity;
-    private final boolean isBuying;
-    private final String inventoryTitle;
+  private ItemStack createConfirmButton() {
+    ItemStack button = new ItemStack(Material.valueOf(ShopConstants.MATERIAL_CONFIRM));
+    button.setDurability(ShopConstants.DATA_CONFIRM);
+    ItemMeta meta = button.getItemMeta();
+    meta.setDisplayName(ChatColor.GREEN + "Confirmar");
+    button.setItemMeta(meta);
+    return button;
+  }
 
-    public ConfirmationData(ShopItem item, int quantity, boolean isBuying, String title) {
-      this.item = item;
-      this.quantity = quantity;
-      this.isBuying = isBuying;
-      this.inventoryTitle = title;
-    }
+  private ItemStack createCancelButton() {
+    ItemStack button = new ItemStack(Material.valueOf(ShopConstants.MATERIAL_CANCEL));
+    button.setDurability(ShopConstants.DATA_CANCEL);
+    ItemMeta meta = button.getItemMeta();
+    meta.setDisplayName(ChatColor.RED + "Cancelar");
+    button.setItemMeta(meta);
+    return button;
+  }
+
+  private ItemStack createIncreaseButton() {
+    ItemStack button = new ItemStack(Material.valueOf(ShopConstants.MATERIAL_INCREASE));
+    button.setDurability(ShopConstants.DATA_INCREASE);
+    ItemMeta meta = button.getItemMeta();
+    meta.setDisplayName(ChatColor.GREEN + "Aumentar Quantidade");
+    button.setItemMeta(meta);
+    return button;
+  }
+
+  private ItemStack createDecreaseButton() {
+    ItemStack button = new ItemStack(Material.valueOf(ShopConstants.MATERIAL_DECREASE));
+    button.setDurability(ShopConstants.DATA_DECREASE);
+    ItemMeta meta = button.getItemMeta();
+    meta.setDisplayName(ChatColor.RED + "Diminuir Quantidade");
+    button.setItemMeta(meta);
+    return button;
+  }
+
+  private ItemStack createQuantityItem(int quantity) {
+    ItemStack item = new ItemStack(Material.valueOf(ShopConstants.MATERIAL_QUANTITY));
+    item.setDurability(ShopConstants.DATA_FILL);
+    ItemMeta meta = item.getItemMeta();
+    meta.setDisplayName(" ");
+    item.setItemMeta(meta);
+    return item;
   }
 }

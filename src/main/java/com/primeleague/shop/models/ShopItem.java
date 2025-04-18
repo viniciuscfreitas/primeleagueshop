@@ -52,42 +52,78 @@ public class ShopItem {
   /**
    * Cria um ItemStack para exibição na GUI da loja
    *
-   * @param pricePrefix Prefixo do preço
+   * @param currencySymbol Símbolo da moeda
    * @return ItemStack configurado
    */
-  public ItemStack createDisplayItem(String pricePrefix) {
-    ItemStack item = new ItemStack(material, 1, data);
+  public ItemStack createDisplayItem(String currencySymbol) {
+    ItemStack item = new ItemStack(material);
     ItemMeta meta = item.getItemMeta();
+    meta.setDisplayName(TextUtils.colorize("&f" + displayName));
+    List<String> lore = new ArrayList<>();
 
-    if (meta != null) {
-      meta.setDisplayName(TextUtils.colorize("§f" + displayName));
-
-      List<String> displayLore = new ArrayList<>(description);
-      displayLore.addAll(lore);
-
-      if (buyPrice > 0) {
-        displayLore.add(pricePrefix + String.format("%.2f", buyPrice));
-      }
-      if (sellPrice > 0) {
-        displayLore.add("§7Venda: §e$" + String.format("%.2f", sellPrice));
-      }
-
-      meta.setLore(TextUtils.colorizeList(displayLore));
-      item.setItemMeta(meta);
+    // Adiciona descrição se existir
+    if (description != null && !description.isEmpty()) {
+        lore.addAll(description);
+        lore.add("");
     }
 
+    // Adiciona preços
+    if (buyPrice > 0) {
+        lore.add(TextUtils.colorize("&aComprar por: " + currencySymbol + String.format("%.2f", buyPrice)));
+    }
+    if (sellPrice > 0) {
+        lore.add(TextUtils.colorize("&cVender por: " + currencySymbol + String.format("%.2f", sellPrice)));
+    }
+
+    // Adiciona instruções
+    lore.add("");
+    if (buyPrice > 0) {
+        lore.add(TextUtils.colorize("&7Botão esquerdo para comprar"));
+    }
+    if (sellPrice > 0) {
+        lore.add(TextUtils.colorize("&7Botão direito para vender"));
+    }
+
+    meta.setLore(lore);
+    item.setItemMeta(meta);
     return item;
   }
 
   /**
-   * Cria um ItemStack real para dar ao jogador
-   *
-   * @param quantidade Quantidade do item
-   * @return ItemStack para o jogador
+   * Verifica se o item pode ser empilhado
+   * @return true se o item pode ser empilhado, false caso contrário
    */
-  public ItemStack createActualItem(int quantidade) {
-    ItemStack item = new ItemStack(material, quantidade, data);
-    return item;
+  private boolean isStackable() {
+    return !(material.name().contains("SWORD") ||
+           material.name().contains("HELMET") ||
+           material.name().contains("CHESTPLATE") ||
+           material.name().contains("LEGGINGS") ||
+           material.name().contains("BOOTS") ||
+           material.name().contains("BOW") ||
+           material.name().contains("SHIELD") ||
+           material.name().contains("ELYTRA") ||
+           material.name().contains("TRIDENT"));
+  }
+
+  /**
+   * Cria um ItemStack real para dar ao jogador
+   * @param quantidade Quantidade do item
+   * @return Lista de ItemStacks para o jogador
+   */
+  public List<ItemStack> createActualItems(int quantidade) {
+    List<ItemStack> items = new ArrayList<>();
+
+    if (isStackable()) {
+        // Se for empilhável, cria um único stack
+        items.add(new ItemStack(material, quantidade, data));
+    } else {
+        // Se não for empilhável, cria items individuais
+        for (int i = 0; i < quantidade; i++) {
+            items.add(new ItemStack(material, 1, data));
+        }
+    }
+
+    return items;
   }
 
   /**
@@ -108,6 +144,30 @@ public class ShopItem {
    */
   public String getName() {
     return displayName;
+  }
+
+  /**
+   * Cria um ItemStack deste item da loja
+   */
+  public ItemStack toItemStack(int amount) {
+    ItemStack item = new ItemStack(material, amount, (short) data);
+    ItemMeta meta = item.getItemMeta();
+
+    if (meta != null) {
+      meta.setDisplayName(TextUtils.colorize("&r" + displayName));
+
+      if (lore != null && !lore.isEmpty()) {
+        List<String> colorizedLore = new ArrayList<>();
+        for (String line : lore) {
+          colorizedLore.add(TextUtils.colorize(line));
+        }
+        meta.setLore(colorizedLore);
+      }
+
+      item.setItemMeta(meta);
+    }
+
+    return item;
   }
 
   // Getters

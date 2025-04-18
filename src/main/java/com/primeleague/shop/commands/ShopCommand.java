@@ -2,10 +2,9 @@ package com.primeleague.shop.commands;
 
 import com.primeleague.shop.PrimeLeagueShopPlugin;
 import com.primeleague.shop.commands.subcommands.*;
-import com.primeleague.shop.gui.ShopGUI;
-import com.primeleague.shop.utils.ShopConstants;
-import com.primeleague.shop.utils.TextUtils;
 import com.primeleague.shop.models.Transaction;
+import com.primeleague.shop.models.Transaction.TransactionType;
+import com.primeleague.shop.utils.TextUtils;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -43,6 +42,8 @@ public class ShopCommand implements CommandExecutor {
     registerSubCommand(new AdminSubCommand(plugin));
     registerSubCommand(new HistorySubCommand(plugin));
     registerSubCommand(new TopSubCommand(plugin));
+    registerSubCommand(new ListSubCommand(plugin));
+    registerSubCommand(new SellAllSubCommand(plugin));
   }
 
   @Override
@@ -57,8 +58,8 @@ public class ShopCommand implements CommandExecutor {
     // Se não houver argumentos, abre a loja
     if (args.length == 0) {
       if (!player.hasPermission("primeleague.shop.use")) {
-        player.sendMessage(plugin.getConfigLoader().getPrefix() +
-            plugin.getConfigLoader().getMessage("no_permission", "§cVocê não tem permissão para isso."));
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+            plugin.getConfigLoader().getMessage("no_permission", "§cVocê não tem permissão para isso.")));
         return true;
       }
       plugin.getShopGUI().openMainMenu(player);
@@ -77,8 +78,8 @@ public class ShopCommand implements CommandExecutor {
 
   private boolean handleHistory(Player player, String[] args) {
     if (!player.hasPermission("primeleague.shop.history")) {
-      player.sendMessage(plugin.getConfigLoader().getPrefix() +
-          "§cVocê não tem permissão para ver o histórico.");
+      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+          "§cVocê não tem permissão para ver o histórico."));
       return true;
     }
 
@@ -90,8 +91,8 @@ public class ShopCommand implements CommandExecutor {
         if (page < 1)
           page = 1;
       } catch (NumberFormatException e) {
-        player.sendMessage(plugin.getConfigLoader().getPrefix() +
-            "§cNúmero de página inválido.");
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+            "§cNúmero de página inválido."));
         return true;
       }
     }
@@ -104,14 +105,14 @@ public class ShopCommand implements CommandExecutor {
       // Volta para a thread principal para mostrar mensagens
       plugin.getServer().getScheduler().runTask(plugin, () -> {
         if (history.isEmpty()) {
-          player.sendMessage(plugin.getConfigLoader().getPrefix() +
-              "§eVocê ainda não realizou nenhuma transação.");
+          player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+              "§eVocê ainda não realizou nenhuma transação."));
           return;
         }
 
         player.sendMessage("§8=== §aHistórico de Transações §8===");
         for (Transaction transaction : history) {
-          String type = transaction.getType() == Transaction.TransactionType.BUY ? "§aComprou" : "§cVendeu";
+          String type = transaction.getType() == TransactionType.BUY ? "§aComprou" : "§cVendeu";
           player.sendMessage(String.format("§7%s §f%dx %s §7por §f$%.2f",
               type,
               transaction.getQuantity(),
@@ -126,8 +127,8 @@ public class ShopCommand implements CommandExecutor {
 
   private boolean handleTop(Player player, String[] args) {
     if (!player.hasPermission("primeleague.shop.top")) {
-      player.sendMessage(plugin.getConfigLoader().getPrefix() +
-          "§cVocê não tem permissão para ver o ranking.");
+      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+          "§cVocê não tem permissão para ver o ranking."));
       return true;
     }
 
@@ -169,8 +170,10 @@ public class ShopCommand implements CommandExecutor {
 
   private void sendUsage(Player player) {
     player.sendMessage("§e/shop §7- Abre a loja");
+    player.sendMessage("§e/shop list §7- Lista todos os itens disponíveis");
     player.sendMessage("§e/shop history §7- Mostra histórico de transações");
     player.sendMessage("§e/shop top [buy|sell] §7- Mostra ranking de compradores/vendedores");
+    player.sendMessage("§e/shop sellall §7- Vende todos os itens do inventário que estão na loja");
   }
 
   /**

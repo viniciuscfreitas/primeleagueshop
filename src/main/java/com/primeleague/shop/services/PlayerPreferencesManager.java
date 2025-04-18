@@ -144,7 +144,7 @@ public class PlayerPreferencesManager {
 
   /**
    * Limpa os dados de cache de um jogador específico
-   * 
+   *
    * @param playerName Nome do jogador
    */
   public void cleanupPlayerData(String playerName) {

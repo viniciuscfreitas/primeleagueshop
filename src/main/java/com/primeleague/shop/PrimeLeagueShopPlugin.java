@@ -21,6 +21,9 @@ import com.primeleague.shop.combat.CombatManager;
 import com.primeleague.shop.listeners.PlayerListener;
 import com.primeleague.shop.listeners.CombatListener;
 import com.primeleague.shop.storage.TransactionHistory;
+import com.primeleague.shop.utils.LogManager;
+import net.milkbowl.vault.economy.Economy;
+import org.bukkit.plugin.RegisteredServiceProvider;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -39,6 +42,8 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
   private DatabaseManager databaseManager;
   private CombatManager combatManager;
   private TransactionHistory transactionHistory;
+  private LogManager logManager;
+  private Economy economy;
 
   // GUIs compartilhadas
   private ShopGUI shopGUI;
@@ -53,6 +58,9 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
         getDataFolder().mkdirs();
       }
 
+      // Inicializa o gerenciador de logs primeiro
+      logManager = new LogManager(this);
+
       // Inicializando os arquivos de configuração
       saveDefaultConfig();
 
@@ -62,21 +70,21 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
       for (String fileName : configFiles) {
         if (!new java.io.File(getDataFolder(), fileName).exists()) {
           saveResource(fileName, false);
-          getLogger().info("Arquivo " + fileName + " criado com sucesso!");
+          logManager.log("Arquivo " + fileName + " criado com sucesso!", LogManager.LogType.SECURITY);
         }
       }
 
       // Carregando configurações
       configLoader = new ShopConfigLoader(this);
       if (!configLoader.loadAll()) {
-        getLogger().severe("Erro ao carregar configurações! O plugin será desabilitado.");
+        logManager.logError("Erro ao carregar configurações!", null);
         getServer().getPluginManager().disablePlugin(this);
         return;
       }
 
       // Verifica se os arquivos foram carregados corretamente
       if (!validateConfigs()) {
-        getLogger().severe("Arquivos de configuração inválidos! O plugin será desabilitado.");
+        logManager.logError("Arquivos de configuração inválidos!", null);
         getServer().getPluginManager().disablePlugin(this);
         return;
       }
@@ -86,7 +94,16 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
         databaseManager = new DatabaseManager(this);
       }
 
+      // Inicializa serviços
+      if (!setupEconomy()) {
+        getLogger().severe("Vault não encontrado! Desabilitando plugin...");
+        getServer().getPluginManager().disablePlugin(this);
+        return;
+      }
+
       // Iniciando serviços
+      long startTime = System.currentTimeMillis();
+
       economyService = new EconomyService(this);
       pricingService = new DynamicPricingService(this);
       preferencesManager = new PlayerPreferencesManager(this);
@@ -97,7 +114,7 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
       transactionHistory = new TransactionHistory(this);
 
       // Iniciando shop manager após outros serviços
-      shopManager = new ShopManager(this, economyService);
+      shopManager = new ShopManager(this, economy);
 
       // Iniciando GUIs
       shopGUI = new ShopGUI(this);
@@ -116,11 +133,13 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
       // Inicia tarefas de limpeza
       startCleanupTasks();
 
-      getLogger().info("PrimeLeagueShop ativado com sucesso!");
+      long duration = System.currentTimeMillis() - startTime;
+      logManager.logPerformance("Inicialização do plugin", duration);
+
+      logManager.log("PrimeLeagueShop ativado com sucesso!", LogManager.LogType.SECURITY);
 
     } catch (Exception e) {
-      getLogger().severe("Erro ao inicializar o plugin: " + e.getMessage());
-      e.printStackTrace();
+      logManager.logError("Erro ao inicializar o plugin", e);
       getServer().getPluginManager().disablePlugin(this);
     }
   }
@@ -159,8 +178,11 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
     if (transactionHistory != null) {
       transactionHistory.close();
     }
+    if (logManager != null) {
+      logManager.shutdown();
+    }
 
-    getLogger().info("PrimeLeagueShop desativado com sucesso!");
+    logManager.log("PrimeLeagueShop desativado com sucesso!", LogManager.LogType.SECURITY);
   }
 
   /**
@@ -244,6 +266,10 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
     return confirmationGUI;
   }
 
+  public LogManager getLogManager() {
+    return logManager;
+  }
+
   /**
    * Valida se os arquivos de configuração foram carregados corretamente
    */
@@ -270,5 +296,21 @@ public class PrimeLeagueShopPlugin extends JavaPlugin {
       getLogger().severe("Erro ao validar configurações: " + e.getMessage());
       return false;
     }
+  }
+
+  private boolean setupEconomy() {
+    if (getServer().getPluginManager().getPlugin("Vault") == null) {
+      return false;
+    }
+    RegisteredServiceProvider<Economy> rsp = getServer().getServicesManager().getRegistration(Economy.class);
+    if (rsp == null) {
+      return false;
+    }
+    economy = rsp.getProvider();
+    return economy != null;
+  }
+
+  public Economy getEconomy() {
+    return economy;
   }
 }

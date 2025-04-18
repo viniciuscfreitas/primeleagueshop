@@ -62,57 +62,87 @@ public class DynamicPricingService {
     }
   }
 
+  /**
+   * Atualiza o preço de um item baseado na demanda
+   */
+  public void updatePrice(ShopItem item, int quantity, boolean isBuy) {
+    if (!enabled) {
+      return;
+    }
+
+    String itemKey = item.getMaterial().name() + ":" + item.getData();
+    PriceData priceData = priceCache.computeIfAbsent(itemKey, k -> new PriceData(item.getBuyPrice()));
+
+    // Atualiza demanda
+    if (isBuy) {
+      priceData.demand += quantity;
+    } else {
+      priceData.demand -= quantity;
+    }
+
+    // Calcula novo multiplicador
+    double multiplier = 1.0;
+    if (priceData.demand > 0) {
+      multiplier = Math.min(maxMultiplier, 1.0 + (priceData.demand * 0.01));
+    } else if (priceData.demand < 0) {
+      multiplier = Math.max(minMultiplier, 1.0 + (priceData.demand * 0.01));
+    }
+
+    // Aplica decay se necessário
+    long now = System.currentTimeMillis();
+    long timeDiff = now - priceData.lastUpdate;
+    if (timeDiff > 3600000) { // 1 hora
+      int decayHours = (int) (timeDiff / 3600000);
+      priceData.demand = (int) (priceData.demand * Math.pow(1.0 - decayRate, decayHours));
+    }
+
+    // Atualiza preço
+    priceData.currentPrice = priceData.basePrice * multiplier;
+    priceData.lastUpdate = now;
+
+    // Atualiza cache
+    priceCache.put(itemKey, priceData);
+
+    // Log da atualização
+    logger.info(String.format(
+      "Preço atualizado para %s: base=%.2f, atual=%.2f, demanda=%d",
+      itemKey,
+      priceData.basePrice,
+      priceData.currentPrice,
+      priceData.demand
+    ));
+  }
+
+  /**
+   * Obtém o preço atual de um item
+   */
   public double getCurrentPrice(ShopItem item) {
     if (!enabled) {
       return item.getBuyPrice();
     }
 
-    String itemId = item.getMaterial().name() + ":" + item.getData();
-    PriceData data = priceCache.get(itemId);
+    String itemKey = item.getMaterial().name() + ":" + item.getData();
+    PriceData priceData = priceCache.get(itemKey);
 
-    if (data == null) {
-      data = new PriceData(item.getBuyPrice());
-      priceCache.put(itemId, data);
-      logger.fine("Novo item adicionado ao cache de preços: " + itemId + " com preço base: " + data.basePrice);
-      return data.currentPrice;
+    if (priceData == null) {
+      return item.getBuyPrice();
     }
 
-    return data.currentPrice;
+    return priceData.currentPrice;
   }
 
-  public void updateDemand(ShopItem item, int quantity) {
+  /**
+   * Limpa preços antigos do cache
+   */
+  public void cleanup() {
     if (!enabled) {
       return;
     }
 
-    String itemId = item.getMaterial().name() + ":" + item.getData();
-    PriceData data = priceCache.get(itemId);
-
-    if (data == null) {
-      data = new PriceData(item.getBuyPrice());
-      priceCache.put(itemId, data);
-    }
-
-    data.demand += quantity;
-    updatePrice(itemId, data);
-    logger.fine("Demanda atualizada para " + itemId + ": " + data.demand + ", novo preço: " + data.currentPrice);
-  }
-
-  private void updatePrice(String itemId, PriceData data) {
-    try {
-      double multiplier = 1.0 + (data.demand * decayRate);
-      multiplier = Math.max(minMultiplier, Math.min(maxMultiplier, multiplier));
-
-      double oldPrice = data.currentPrice;
-      data.currentPrice = data.basePrice * multiplier;
-      data.lastUpdate = System.currentTimeMillis();
-
-      if (Math.abs(oldPrice - data.currentPrice) > 0.01) {
-        logger.fine("Preço atualizado para " + itemId + ": " + oldPrice + " -> " + data.currentPrice);
-      }
-    } catch (Exception e) {
-      logger.log(Level.WARNING, "Erro ao atualizar preço para " + itemId, e);
-    }
+    long now = System.currentTimeMillis();
+    priceCache.entrySet().removeIf(entry ->
+      now - entry.getValue().lastUpdate > 86400000 // 24 horas
+    );
   }
 
   private void startPriceUpdateTask() {
@@ -127,7 +157,7 @@ public class DynamicPricingService {
             PriceData data = entry.getValue();
             if (data.demand > 0) {
               data.demand = Math.max(0, data.demand - 1);
-              updatePrice(entry.getKey(), data);
+              updatePrice(null, 0, false);
               updatedItems++;
             }
           }

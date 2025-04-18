@@ -9,10 +9,12 @@ import com.primeleague.shop.models.Transaction;
 import com.primeleague.shop.storage.dao.TransactionDAO;
 import com.primeleague.shop.utils.ShopConstants;
 import com.primeleague.shop.utils.TextUtils;
+import com.primeleague.shop.utils.Cleanable;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
+import net.milkbowl.vault.economy.Economy;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,15 +26,20 @@ import java.sql.SQLException;
 /**
  * Gerencia as operações da loja, incluindo a compra e venda de itens
  */
-public class ShopManager {
+public class ShopManager implements Cleanable {
 
   private final PrimeLeagueShopPlugin plugin;
-  private final EconomyService economyService;
+  private final Economy economy;
   private final List<ShopCategory> categories;
   private final Map<String, CachedShopItem> itemCache;
   private TransactionDAO transactionDAO;
   private final Map<String, ShopItem> itemsById;
   private final Map<String, List<ShopItem>> itemsByCategory;
+  private final Map<String, RateLimit> rateLimits = new HashMap<>();
+  private static final long RATE_LIMIT_WINDOW = 60000; // 1 minuto
+  private static final int MAX_TRANSACTIONS = 30; // máximo de transações por minuto
+  private final Map<String, Long> transactionCooldowns = new HashMap<>();
+  private static final long COOLDOWN_DURATION = 2000; // 2 segundos entre transações
 
   private static class CachedShopItem {
     private final ShopItem item;
@@ -52,15 +59,38 @@ public class ShopManager {
     }
   }
 
+  private static class RateLimit {
+    private int count;
+    private long windowStart;
+
+    public RateLimit() {
+      this.count = 0;
+      this.windowStart = System.currentTimeMillis();
+    }
+
+    public boolean tryAcquire() {
+      long now = System.currentTimeMillis();
+      if (now - windowStart > RATE_LIMIT_WINDOW) {
+        count = 0;
+        windowStart = now;
+      }
+      if (count >= MAX_TRANSACTIONS) {
+        return false;
+      }
+      count++;
+      return true;
+    }
+  }
+
   /**
    * Cria um novo gerenciador de loja
    *
    * @param plugin         Instância do plugin
-   * @param economyService Serviço de economia
+   * @param economy        Serviço de economia
    */
-  public ShopManager(PrimeLeagueShopPlugin plugin, EconomyService economyService) {
+  public ShopManager(PrimeLeagueShopPlugin plugin, Economy economy) {
     this.plugin = plugin;
-    this.economyService = economyService;
+    this.economy = economy;
     this.categories = new ArrayList<>();
     this.itemCache = new HashMap<>();
     this.itemsById = new HashMap<>();
@@ -162,197 +192,124 @@ public class ShopManager {
     plugin.getLogger().info("Carregados " + itemsById.size() + " itens em " + itemsByCategory.size() + " categorias.");
   }
 
+  private synchronized boolean checkRateLimit(Player player) {
+    RateLimit limit = rateLimits.computeIfAbsent(player.getName(), k -> new RateLimit());
+    return limit.tryAcquire();
+  }
+
+  private boolean checkCooldown(Player player) {
+    String playerName = player.getName();
+    Long lastTransaction = transactionCooldowns.get(playerName);
+    long now = System.currentTimeMillis();
+
+    if (lastTransaction != null && now - lastTransaction < COOLDOWN_DURATION) {
+      long remaining = (lastTransaction + COOLDOWN_DURATION - now) / 1000;
+      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("cooldown",
+        "&cAguarde {seconds} segundos para realizar outra transação.")
+        .replace("{seconds}", String.valueOf(remaining + 1))));
+      return false;
+    }
+
+    transactionCooldowns.put(playerName, now);
+    return true;
+  }
+
   /**
-   * Processa uma transação de compra
-   *
-   * @param player   Jogador
-   * @param item     Item a comprar
+   * Processa uma compra
+   * @param player Jogador
+   * @param item Item
    * @param quantity Quantidade
-   * @return true se a compra foi bem-sucedida
+   * @return true se sucesso
    */
-  public boolean buyItem(Player player, ShopItem item, int quantity) {
-    // Verifica permissões
-    if (!player.hasPermission(ShopConstants.PERM_BUY)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("no_permission", "&cVocê não tem permissão para isso.")));
-      return false;
+  public boolean processPurchase(Player player, ShopItem item, int quantity) {
+    double totalCost = item.getBuyPrice() * quantity;
+
+    // Verifica se tem dinheiro suficiente
+    if (!economy.has(player.getName(), totalCost)) {
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("insufficient_money",
+            "&cVocê não tem dinheiro suficiente! Necessário: {currency}{price}")
+            .replace("{currency}", plugin.getConfigLoader().getCurrencySymbol())
+            .replace("{price}", String.format("%.2f", totalCost))));
+        return false;
     }
 
-    if (item.getPermission() != null && !item.getPermission().isEmpty() &&
-        !player.hasPermission(item.getPermission())) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("item_no_permission",
-              "&cVocê não tem permissão para comprar este item.")));
-      return false;
+    // Verifica espaço no inventário
+    List<ItemStack> items = item.createActualItems(quantity);
+    int slotsNeeded = items.size();
+    int slotsAvailable = 0;
+
+    for (ItemStack content : player.getInventory().getContents()) {
+        if (content == null || content.getType() == Material.AIR) {
+            slotsAvailable++;
+        }
     }
 
-    // Calcula o preço total
-    double price = item.calculatePrice(quantity, true);
-
-    // Verifica se o jogador tem dinheiro suficiente
-    if (!economyService.hasMoney(player, price)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader()
-              .getMessage("not_enough_money", "&cVocê não tem dinheiro suficiente. Necessário: &e{price}{currency}")
-              .replace("{price}", String.valueOf(price))
-              .replace("{currency}", plugin.getConfigLoader().getCurrencySymbol())));
-      return false;
+    if (slotsAvailable < slotsNeeded) {
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("inventory_full",
+            "&cSeu inventário está cheio! Necessário: {slots} slots livres")
+            .replace("{slots}", String.valueOf(slotsNeeded))));
+        return false;
     }
 
-    // Cria a transação
-    Transaction transaction = new Transaction(
-        player.getName(),
-        item,
-        quantity,
-        item.getBuyPrice(),
-        Transaction.TransactionType.BUY);
+    // Processa a compra
+    economy.withdrawPlayer(player.getName(), totalCost);
 
-    // Chama o evento de pré-transação
-    ShopPreTransactionEvent preEvent = new ShopPreTransactionEvent(
-        player,
-        item,
-        quantity,
-        price,
-        Transaction.TransactionType.BUY);
-
-    plugin.getServer().getPluginManager().callEvent(preEvent);
-    if (preEvent.isCancelled()) {
-      if (!preEvent.getCancelReason().isEmpty()) {
-        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() + preEvent.getCancelReason()));
-      }
-      return false;
+    // Entrega os itens
+    for (ItemStack itemStack : items) {
+        player.getInventory().addItem(itemStack);
     }
-
-    // Aplica possíveis mudanças do evento
-    quantity = preEvent.getQuantity();
-    price = preEvent.getTotalPrice();
-
-    // Verifica se o jogador tem espaço no inventário
-    if (!hasInventorySpace(player, item, quantity)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("inventory_full", "&cSeu inventário está cheio!")));
-      return false;
-    }
-
-    // Realiza a transação
-    boolean moneyWithdrawn = economyService.withdrawMoney(player, price);
-    if (!moneyWithdrawn) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("economy_error", "&cOcorreu um erro com a economia. Tente novamente.")));
-      return false;
-    }
-
-    // Entrega o item
-    ItemStack itemStack = item.createActualItem(quantity);
-    player.getInventory().addItem(itemStack);
-
-    // Registra a transação
-    transaction.markSuccessful();
-    logTransaction(transaction);
-
-    // Chama o evento de transação concluída
-    ShopTransactionEvent event = new ShopTransactionEvent(player, transaction);
-    plugin.getServer().getPluginManager().callEvent(event);
-
-    // Envia mensagem de sucesso
-    player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-        TextUtils.formatBuyMessage(
-            plugin.getConfigLoader().getMessage("item_bought",
-                "&aVocê comprou &e{quantity}x {item} &apor &e{price}{currency}!"),
-            item.getName(),
-            quantity,
-            price,
-            plugin.getConfigLoader().getCurrencySymbol())));
 
     return true;
   }
 
   /**
-   * Processa uma transação de venda
-   *
-   * @param player   Jogador
-   * @param item     Item a vender
+   * Processa uma venda
+   * @param player Jogador
+   * @param item Item
    * @param quantity Quantidade
-   * @return true se a venda foi bem-sucedida
+   * @return true se sucesso
    */
-  public boolean sellItem(Player player, ShopItem item, int quantity) {
-    // Verifica permissões
-    if (!player.hasPermission(ShopConstants.PERM_SELL)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("no_permission", "&cVocê não tem permissão para isso.")));
-      return false;
-    }
-
-    // Calcula o preço total
-    double price = item.calculatePrice(quantity, false);
-
-    // Cria a transação
-    Transaction transaction = new Transaction(
-        player.getName(),
-        item,
-        quantity,
-        item.getSellPrice(),
-        Transaction.TransactionType.SELL);
-
-    // Chama o evento de pré-transação
-    ShopPreTransactionEvent preEvent = new ShopPreTransactionEvent(
-        player,
-        item,
-        quantity,
-        price,
-        Transaction.TransactionType.SELL);
-
-    plugin.getServer().getPluginManager().callEvent(preEvent);
-    if (preEvent.isCancelled()) {
-      if (!preEvent.getCancelReason().isEmpty()) {
-        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() + preEvent.getCancelReason()));
-      }
-      return false;
-    }
-
-    // Aplica possíveis mudanças do evento
-    quantity = preEvent.getQuantity();
-    price = preEvent.getTotalPrice();
-
+  public boolean processSale(Player player, ShopItem item, int quantity) {
     // Verifica se o jogador tem os itens necessários
-    if (!hasItem(player, item, quantity)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("not_enough_items", "&cVocê não tem itens suficientes para vender.")));
-      return false;
+    int itemCount = 0;
+    for (ItemStack invItem : player.getInventory().getContents()) {
+        if (invItem != null && item.matches(invItem)) {
+            itemCount += invItem.getAmount();
+        }
     }
 
-    // Remove os itens
-    removeItems(player, item, quantity);
+    if (itemCount < quantity) {
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("insufficient_items",
+            "&cVocê não tem itens suficientes! Necessário: {quantity}x")
+            .replace("{quantity}", String.valueOf(quantity))));
+        return false;
+    }
+
+    // Calcula o valor total
+    double totalValue = item.getSellPrice() * quantity;
+
+    // Remove os itens do inventário
+    int remaining = quantity;
+    ItemStack[] contents = player.getInventory().getContents();
+
+    for (int i = 0; i < contents.length && remaining > 0; i++) {
+        ItemStack invItem = contents[i];
+        if (invItem != null && item.matches(invItem)) {
+            int toRemove = Math.min(remaining, invItem.getAmount());
+            remaining -= toRemove;
+
+            if (toRemove == invItem.getAmount()) {
+                contents[i] = null;
+            } else {
+                invItem.setAmount(invItem.getAmount() - toRemove);
+            }
+        }
+    }
+
+    player.getInventory().setContents(contents);
 
     // Adiciona o dinheiro
-    boolean moneyDeposited = economyService.depositMoney(player, price);
-    if (!moneyDeposited) {
-      // Tenta devolver os itens em caso de falha
-      ItemStack itemStack = item.createActualItem(quantity);
-      player.getInventory().addItem(itemStack);
-
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("economy_error", "&cOcorreu um erro com a economia. Tente novamente.")));
-      return false;
-    }
-
-    // Registra a transação
-    transaction.markSuccessful();
-    logTransaction(transaction);
-
-    // Chama o evento de transação concluída
-    ShopTransactionEvent event = new ShopTransactionEvent(player, transaction);
-    plugin.getServer().getPluginManager().callEvent(event);
-
-    // Envia mensagem de sucesso
-    player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-        TextUtils.formatBuyMessage(
-            plugin.getConfigLoader().getMessage("item_sold",
-                "&aVocê vendeu &e{quantity}x {item} &apor &e{price}{currency}!"),
-            item.getName(),
-            quantity,
-            price,
-            plugin.getConfigLoader().getCurrencySymbol())));
+    economy.depositPlayer(player.getName(), totalValue);
 
     return true;
   }
@@ -363,27 +320,12 @@ public class ShopManager {
    * @param transaction Transação a registrar
    */
   private void logTransaction(Transaction transaction) {
-    // Log no console se configurado
-    if (plugin.getConfigLoader().shouldLogToConsole()) {
-      String logMessage = String.format(ShopConstants.LOG_TRANSACTION,
-          String.format("%s %s %dx %s por %.2f%s",
-              transaction.getPlayerName(),
-              transaction.getType() == Transaction.TransactionType.BUY ? "comprou" : "vendeu",
-              transaction.getQuantity(),
-              transaction.getItem().getName(),
-              transaction.getTotalPrice(),
-              plugin.getConfigLoader().getCurrencySymbol()));
-      plugin.getLogger().info(logMessage);
-    }
-
-    // Log no banco de dados se configurado
-    if (plugin.getConfigLoader().shouldLogToDatabase() && transactionDAO != null) {
-      try {
-        transactionDAO.saveTransaction(transaction);
-      } catch (Exception e) {
-        plugin.getLogger().log(Level.WARNING,
-            String.format(ShopConstants.LOG_DATABASE_ERROR, "Erro ao salvar transação"), e);
-      }
+    if (plugin.isDatabaseEnabled() && transactionDAO != null) {
+        try {
+            transactionDAO.saveTransaction(transaction);
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Erro ao salvar transação no banco", e);
+        }
     }
   }
 
@@ -395,9 +337,8 @@ public class ShopManager {
    * @param quantity Quantidade
    * @return true se houver espaço
    */
-  private boolean hasInventorySpace(Player player, ShopItem item, int quantity) {
-    ItemStack testItem = item.createActualItem(quantity);
-    return player.getInventory().firstEmpty() != -1 || player.getInventory().contains(testItem.getType());
+  private boolean hasInventorySpace(Player player, ItemStack item) {
+    return player.getInventory().firstEmpty() != -1 || player.getInventory().contains(item.getType());
   }
 
   /**
@@ -429,24 +370,25 @@ public class ShopManager {
    * @param quantity Quantidade a remover
    */
   private void removeItems(Player player, ShopItem item, int quantity) {
+    ItemStack checkItem = item.createActualItems(1).get(0);
     int remaining = quantity;
     ItemStack[] contents = player.getInventory().getContents();
 
     for (int i = 0; i < contents.length && remaining > 0; i++) {
-      ItemStack stack = contents[i];
-      if (stack != null && item.matches(stack)) {
-        int amount = stack.getAmount();
-        if (amount <= remaining) {
-          player.getInventory().setItem(i, null);
-          remaining -= amount;
-        } else {
-          stack.setAmount(amount - remaining);
-          player.getInventory().setItem(i, stack);
-          remaining = 0;
+        ItemStack invItem = contents[i];
+        if (invItem != null && invItem.isSimilar(checkItem)) {
+            int amount = invItem.getAmount();
+            if (amount <= remaining) {
+                contents[i] = null;
+                remaining -= amount;
+            } else {
+                invItem.setAmount(amount - remaining);
+                remaining = 0;
+            }
         }
-      }
     }
 
+    player.getInventory().setContents(contents);
     player.updateInventory();
   }
 
@@ -525,43 +467,58 @@ public class ShopManager {
   public boolean processBuy(Player player, Transaction transaction) {
     // Verifica permissões
     if (!player.hasPermission(ShopConstants.PERM_BUY)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("no_permission", "&cVocê não tem permissão para isso.")));
-      return false;
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+            plugin.getConfigLoader().getMessage("no_permission", "&cVocê não tem permissão para isso.")));
+        return false;
     }
 
     ShopItem item = transaction.getItem();
     if (item.getPermission() != null && !item.getPermission().isEmpty() &&
         !player.hasPermission(item.getPermission())) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("item_no_permission",
-              "&cVocê não tem permissão para comprar este item.")));
-      return false;
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+            plugin.getConfigLoader().getMessage("item_no_permission",
+                "&cVocê não tem permissão para comprar este item.")));
+        return false;
     }
 
     // Calcula o preço total
     double totalPrice = transaction.getTotalPrice();
 
     // Verifica se o jogador tem dinheiro suficiente
-    if (!economyService.hasMoney(player, totalPrice)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader()
-              .getMessage("not_enough_money", "&cVocê não tem dinheiro suficiente. Necessário: &e{price}{currency}")
-              .replace("{price}", String.format("%.2f", totalPrice))
-              .replace("{currency}", plugin.getConfigLoader().getCurrencySymbol())));
-      return false;
+    if (!economy.has(player.getName(), totalPrice)) {
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+            plugin.getConfigLoader()
+                .getMessage("not_enough_money", "&cVocê não tem dinheiro suficiente. Necessário: &e{price}{currency}")
+                .replace("{price}", String.format("%.2f", totalPrice))
+                .replace("{currency}", plugin.getConfigLoader().getCurrencySymbol())));
+        return false;
+    }
+
+    // Verifica espaço no inventário
+    List<ItemStack> items = item.createActualItems(transaction.getQuantity());
+    int slotsNeeded = items.size();
+    int slotsAvailable = 0;
+
+    for (ItemStack content : player.getInventory().getContents()) {
+        if (content == null || content.getType() == Material.AIR) {
+            slotsAvailable++;
+        }
+    }
+
+    if (slotsAvailable < slotsNeeded) {
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getMessage("inventory_full",
+            "&cSeu inventário está cheio! Necessário: {slots} slots livres")
+            .replace("{slots}", String.valueOf(slotsNeeded))));
+        return false;
     }
 
     // Processa o pagamento
-    if (!economyService.withdrawMoney(player, totalPrice)) {
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("transaction_failed", "&cErro ao processar a transação.")));
-      return false;
-    }
+    economy.withdrawPlayer(player.getName(), totalPrice);
 
-    // Dá o item para o jogador
-    ItemStack itemStack = item.createActualItem(transaction.getQuantity());
-    player.getInventory().addItem(itemStack);
+    // Dá os itens para o jogador
+    for (ItemStack itemStack : items) {
+        player.getInventory().addItem(itemStack);
+    }
 
     // Envia mensagem de sucesso
     String message = plugin.getConfigLoader().getMessage("buy_success",
@@ -574,11 +531,11 @@ public class ShopManager {
 
     // Registra a transação no banco de dados se necessário
     if (plugin.getConfigLoader().shouldLogToDatabase() && transactionDAO != null) {
-      try {
-        transactionDAO.saveTransaction(transaction);
-      } catch (SQLException e) {
-        plugin.getLogger().log(Level.SEVERE, "Erro ao salvar transação no banco de dados", e);
-      }
+        try {
+            transactionDAO.saveTransaction(transaction);
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Erro ao salvar transação no banco de dados", e);
+        }
     }
 
     transaction.markSuccessful();
@@ -618,15 +575,7 @@ public class ShopManager {
     removeItems(player, item, quantity);
 
     // Dá o dinheiro para o jogador
-    if (!economyService.depositMoney(player, totalPrice)) {
-      // Se falhar ao depositar o dinheiro, tenta devolver os itens
-      ItemStack itemStack = item.createActualItem(quantity);
-      player.getInventory().addItem(itemStack);
-
-      player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
-          plugin.getConfigLoader().getMessage("transaction_failed", "&cErro ao processar a transação.")));
-      return false;
-    }
+    economy.depositPlayer(player.getName(), totalPrice);
 
     // Envia mensagem de sucesso
     String message = plugin.getConfigLoader().getMessage("sell_success",
@@ -648,5 +597,180 @@ public class ShopManager {
 
     transaction.markSuccessful();
     return true;
+  }
+
+  private boolean validatePurchase(Player player, ShopItem item, int quantity) {
+    double totalPrice = item.getBuyPrice() * quantity;
+
+    // Verifica se o jogador tem dinheiro suficiente
+    if (!economy.has(player.getName(), totalPrice)) {
+        player.sendMessage(TextUtils.colorize(plugin.getConfigLoader().getPrefix() +
+            plugin.getConfigLoader()
+                .getMessage("not_enough_money", "&cVocê não tem dinheiro suficiente. Necessário: &e{price}{currency}")
+                .replace("{price}", String.format("%.2f", totalPrice))
+                .replace("{currency}", plugin.getConfigLoader().getCurrencySymbol())));
+        return false;
+    }
+
+    // Processa o pagamento
+    economy.withdrawPlayer(player.getName(), totalPrice);
+
+    return true;
+  }
+
+  private boolean validateSale(Player player, ShopItem item, int quantity) {
+    double totalPrice = item.getSellPrice() * quantity;
+
+    // Dá o dinheiro para o jogador
+    economy.depositPlayer(player.getName(), totalPrice);
+
+    return true;
+  }
+
+  private boolean hasItems(Player player, ShopItem item, int quantity) {
+    ItemStack checkItem = item.createActualItems(1).get(0);
+    int found = 0;
+
+    for (ItemStack invItem : player.getInventory().getContents()) {
+        if (invItem != null && invItem.isSimilar(checkItem)) {
+            found += invItem.getAmount();
+            if (found >= quantity) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+  }
+
+  private void cleanupCooldowns() {
+    long now = System.currentTimeMillis();
+    transactionCooldowns.entrySet().removeIf(entry ->
+      now - entry.getValue() > COOLDOWN_DURATION * 2
+    );
+  }
+
+  @Override
+  public void cleanup() {
+    cleanupCooldowns();
+    cleanupCache();
+  }
+
+  private void cleanupCache() {
+    long now = System.currentTimeMillis();
+    itemCache.entrySet().removeIf(entry ->
+      now - entry.getValue().getLastAccess() > 3600000 // 1 hora
+    );
+  }
+
+  public ShopItem getItem(Material material, byte data) {
+    String itemId = material.name() + ":" + data;
+    CachedShopItem cached = itemCache.get(itemId);
+
+    if (cached != null) {
+      return cached.getItem();
+    }
+
+    for (ShopCategory category : categories) {
+      for (ShopItem item : category.getItems()) {
+        if (item.getMaterial() == material && item.getData() == data) {
+          itemCache.put(itemId, new CachedShopItem(item));
+          return item;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Verifica se o jogador tem espaço suficiente no inventário
+   */
+  private boolean hasInventorySpace(Player player, ShopItem item, int quantity) {
+    List<ItemStack> items = item.createActualItems(quantity);
+    int slotsNeeded = items.size();
+    int slotsAvailable = 0;
+
+    for (ItemStack content : player.getInventory().getContents()) {
+      if (content == null || content.getType() == Material.AIR) {
+        slotsAvailable++;
+      }
+    }
+
+    return slotsAvailable >= slotsNeeded;
+  }
+
+  /**
+   * Recupera um item da loja pelo material e data value
+   * @param material Nome do material
+   * @param data Data value do item
+   * @return ShopItem se encontrado, null caso contrário
+   */
+  public ShopItem getItemByMaterialAndData(String material, byte data) {
+    plugin.getLogger().info("[Debug] Procurando item por material: " + material + " e data: " + data);
+
+    // Primeiro tenta encontrar pelo nome do material
+    for (ShopCategory category : categories) {
+        plugin.getLogger().info("[Debug] Verificando categoria: " + category.getName());
+
+        for (ShopItem item : category.getItems()) {
+            plugin.getLogger().info("[Debug] Comparando com item: " + item.getName() +
+                " (Material: " + item.getMaterial().name() + ")");
+
+            // Compara o material de várias formas
+            if (item.getMaterial().name().equalsIgnoreCase(material) ||
+                item.getMaterial().name().replace("_", "").equalsIgnoreCase(material.replace("_", "")) ||
+                item.getMaterial().name().replace(" ", "_").equalsIgnoreCase(material.replace(" ", "_"))) {
+
+                // Se a data corresponder ou for 0
+                if (item.getData() == data || data == 0) {
+                    plugin.getLogger().info("[Debug] Item encontrado pelo nome do material!");
+                    return item;
+                }
+            }
+        }
+    }
+
+    // Se não encontrou, tenta pelo ID (para compatibilidade)
+    try {
+        int materialId = Integer.parseInt(material);
+        Material matchedMaterial = null;
+
+        // Mapeamento de IDs comuns
+        switch (materialId) {
+            case 276:
+                matchedMaterial = Material.DIAMOND_SWORD;
+                break;
+            case 264:
+                matchedMaterial = Material.DIAMOND;
+                break;
+            case 266:
+                matchedMaterial = Material.GOLD_INGOT;
+                break;
+            case 265:
+                matchedMaterial = Material.IRON_INGOT;
+                break;
+            default:
+                matchedMaterial = Material.getMaterial(materialId);
+        }
+
+        if (matchedMaterial != null) {
+            plugin.getLogger().info("[Debug] Material encontrado por ID: " + materialId + " -> " + matchedMaterial.name());
+
+            for (ShopCategory category : categories) {
+                for (ShopItem item : category.getItems()) {
+                    if (item.getMaterial() == matchedMaterial && (item.getData() == data || data == 0)) {
+                        plugin.getLogger().info("[Debug] Item encontrado por ID do material!");
+                        return item;
+                    }
+                }
+            }
+        }
+    } catch (NumberFormatException e) {
+        // Ignora se não for um número
+    }
+
+    plugin.getLogger().info("[Debug] Nenhum item encontrado");
+    return null;
   }
 }

@@ -1,5 +1,7 @@
 package com.primeleague.shop.models;
 
+import java.sql.Timestamp;
+
 /**
  * Representa uma transação na loja
  */
@@ -12,13 +14,13 @@ public class Transaction {
     BUY, SELL
   }
 
-  private final String playerName;
-  private final ShopItem item;
-  private final int quantity;
-  private final double unitPrice;
-  private final TransactionType type;
-  private boolean successful;
-  private final long timestamp;
+  private String playerName;
+  private ShopItem item;
+  private int quantity;
+  private double price;
+  private TransactionType type;
+  private Timestamp timestamp;
+  private boolean success;
 
   /**
    * Cria uma nova transação
@@ -26,17 +28,18 @@ public class Transaction {
    * @param playerName Nome do jogador
    * @param item       Item da transação
    * @param quantity   Quantidade
-   * @param unitPrice  Preço por unidade
+   * @param price      Preço
    * @param type       Tipo de transação (compra/venda)
+   * @param timestamp  Timestamp da transação
    */
-  public Transaction(String playerName, ShopItem item, int quantity, double unitPrice, TransactionType type) {
+  public Transaction(String playerName, ShopItem item, int quantity, double price, TransactionType type, Timestamp timestamp) {
     this.playerName = playerName;
     this.item = item;
     this.quantity = quantity;
-    this.unitPrice = unitPrice;
+    this.price = price;
     this.type = type;
-    this.successful = false;
-    this.timestamp = System.currentTimeMillis();
+    this.timestamp = timestamp;
+    this.success = false;
   }
 
   // Getters
@@ -53,31 +56,27 @@ public class Transaction {
     return quantity;
   }
 
-  public double getUnitPrice() {
-    return unitPrice;
-  }
-
-  public double getTotalPrice() {
-    return unitPrice * quantity;
+  public double getPrice() {
+    return price;
   }
 
   public TransactionType getType() {
     return type;
   }
 
-  public boolean isSuccessful() {
-    return successful;
+  public Timestamp getTimestamp() {
+    return timestamp;
+  }
+
+  public boolean isSuccess() {
+    return success;
   }
 
   /**
    * Marca a transação como bem-sucedida
    */
   public void markSuccessful() {
-    this.successful = true;
-  }
-
-  public long getTimestamp() {
-    return timestamp;
+    this.success = true;
   }
 
   /**
@@ -98,10 +97,39 @@ public class Transaction {
     return type == TransactionType.SELL;
   }
 
+  public void setSuccess(boolean success) {
+    this.success = success;
+  }
+
   @Override
   public String toString() {
-    return String.format("[%s] %s %s %dx %s a %.2f cada (Total: %.2f)",
-        timestamp, playerName, (type == TransactionType.BUY ? "comprou" : "vendeu"),
-        quantity, item.getName(), unitPrice, getTotalPrice());
+    return String.format("[%s] %s %s %dx %s por $%.2f",
+        timestamp,
+        playerName,
+        (type == TransactionType.BUY ? "comprou" : "vendeu"),
+        quantity,
+        item.getName(),
+        getTotalPrice());
+  }
+
+  public double getTotalPrice() {
+    return price * quantity;
+  }
+
+  /**
+   * Retorna o preço unitário da transação
+   * @return preço por unidade
+   */
+  public double getUnitPrice() {
+    return price;
+  }
+
+  /**
+   * Verifica se a transação foi bem-sucedida
+   * @return true se a transação foi concluída com sucesso
+   */
+  public boolean isSuccessful() {
+    return success;
   }
 }
+

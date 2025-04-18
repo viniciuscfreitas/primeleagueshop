@@ -54,13 +54,15 @@ public class HistorySubCommand implements SubCommand {
           return;
         }
 
+        String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
         player.sendMessage("§8=== §aHistórico de Transações §8===");
         for (Transaction transaction : history) {
           String type = transaction.getType() == Transaction.TransactionType.BUY ? "§aComprou" : "§cVendeu";
-          player.sendMessage(String.format("§7%s §f%dx %s §7por §f$%.2f",
+          player.sendMessage(String.format("§7%s §f%dx %s §7por §f%s%.2f",
               type,
               transaction.getQuantity(),
               transaction.getItem().getName(),
+              currencySymbol,
               transaction.getTotalPrice()));
         }
       });

@@ -27,6 +27,7 @@ public class CategoryGUI {
 
   private final PrimeLeagueShopPlugin plugin;
   private final Map<UUID, PlayerCategoryData> playerData;
+  private final Map<UUID, PreviewData> previewData;
   private final int rows;
   private final String title;
   private List<ShopItem> items;
@@ -47,32 +48,35 @@ public class CategoryGUI {
   private static final String LOG_CLICK_DEBUG = "Clique processado na categoria: slot=%d, item=%s";
   private static final String LOG_PLAYER_DATA = "Dados do jogador %s - Categoria: %s, Página: %s, Título: %s";
 
-  /**
-   * Classe para armazenar dados da categoria por jogador
-   */
-  private class PlayerCategoryData {
-    private ShopCategory category;
+  private static final int PREVIEW_SLOT = 49;
+  private static final int BACK_SLOT = 45;
+  private static final int NEXT_SLOT = 53;
+  private static final int FAVORITE_SLOT = 48;
+
+  private static class PlayerCategoryData {
+    private ShopCategory currentCategory;
     private int currentPage;
-    private Map<Integer, ShopItem> itemSlotMap;
-    private String inventoryTitle;
+    private final Map<Integer, ShopItem> slotMap;
 
     public PlayerCategoryData() {
-      this.currentPage = 0;
-      this.itemSlotMap = new HashMap<>();
+      this.slotMap = new HashMap<>();
+      this.currentPage = 1;
+    }
+  }
+
+  private static class PreviewData {
+    private final ShopItem item;
+    private final int quantity;
+    private final long timestamp;
+
+    public PreviewData(ShopItem item, int quantity) {
+      this.item = item;
+      this.quantity = quantity;
+      this.timestamp = System.currentTimeMillis();
     }
 
-    public void setData(ShopCategory category, int page, String title) {
-      this.category = category;
-      this.currentPage = page;
-      this.inventoryTitle = title;
-      this.itemSlotMap.clear();
-
-      // Log para debug
-      plugin.getLogger().info(String.format(LOG_PLAYER_DATA,
-          "Player",
-          category != null ? category.getName() : "null",
-          String.valueOf(page),
-          title));
+    public boolean isExpired() {
+      return System.currentTimeMillis() - timestamp > 300000; // 5 minutos
     }
   }
 
@@ -84,6 +88,7 @@ public class CategoryGUI {
   public CategoryGUI(PrimeLeagueShopPlugin plugin) {
     this.plugin = plugin;
     this.playerData = new HashMap<>();
+    this.previewData = new HashMap<>();
     this.rows = plugin.getConfig().getInt("gui.category.rows", 6);
     this.title = plugin.getConfigLoader().getMessage("gui.category.title", "Categoria");
   }
@@ -92,10 +97,7 @@ public class CategoryGUI {
    * Obtém ou cria dados do jogador
    */
   private PlayerCategoryData getPlayerData(Player player) {
-    return playerData.computeIfAbsent(player.getUniqueId(), k -> {
-      plugin.getLogger().info("Criando novos dados para jogador " + player.getName());
-      return new PlayerCategoryData();
-    });
+    return playerData.computeIfAbsent(player.getUniqueId(), k -> new PlayerCategoryData());
   }
 
   /**
@@ -122,7 +124,9 @@ public class CategoryGUI {
     PlayerCategoryData data = getPlayerData(player);
 
     // Configura os dados antes de criar o inventário
-    data.setData(category, page, title);
+    data.currentCategory = category;
+    data.currentPage = page;
+    data.slotMap.clear();
 
     plugin.getLogger().info("Título definido para jogador " + player.getName() + ": " + title);
 
@@ -144,6 +148,7 @@ public class CategoryGUI {
       }
     }
 
+    String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
     for (int i = startIndex; i < endIndex; i++) {
       ShopItem item = items.get(i);
       int slot = FIRST_ITEM_SLOT + (i - startIndex);
@@ -151,9 +156,9 @@ public class CategoryGUI {
       if (slot > FIRST_ITEM_SLOT + ITEMS_PER_PAGE - 1)
         break;
 
-      ItemStack display = item.createDisplayItem(plugin.getConfigLoader().getCurrencySymbol());
+      ItemStack display = item.createDisplayItem(currencySymbol);
       inventory.setItem(slot, display);
-      data.itemSlotMap.put(slot, item);
+      data.slotMap.put(slot, item);
     }
 
     setupNavigationButtons(inventory, data);
@@ -180,7 +185,7 @@ public class CategoryGUI {
 
   private boolean hasNextPage(PlayerCategoryData data) {
     int startIndex = (data.currentPage + 1) * ITEMS_PER_PAGE;
-    return startIndex < data.category.getItems().size();
+    return startIndex < data.currentCategory.getItems().size();
   }
 
   /**
@@ -196,45 +201,14 @@ public class CategoryGUI {
     try {
       PlayerCategoryData data = getPlayerData(player);
 
-      // Validação inicial dos dados
       if (data == null) {
         plugin.getLogger().warning("Dados do jogador " + player.getName() + " são nulos");
         return false;
       }
 
-      // Log detalhado do estado atual
-      plugin.getLogger().info("Estado atual do jogador " + player.getName() + ":");
-      plugin.getLogger().info("- Categoria: " + (data.category != null ? data.category.getName() : "null"));
-      plugin.getLogger().info("- Página: " + data.currentPage);
-      plugin.getLogger().info("- Título do inventário: " + data.inventoryTitle);
-      plugin.getLogger().info("- Slot clicado: " + slot);
-
-      String currentTitle = player.getOpenInventory().getTitle();
-
-      // Validação do título do inventário
-      if (data.inventoryTitle == null) {
-        plugin.getLogger().warning("Título do inventário não foi definido para " + player.getName());
-        return false;
-      }
-
-      if (!currentTitle.equals(data.inventoryTitle)) {
-        plugin.getLogger().warning("Títulos não correspondem para " + player.getName());
-        plugin.getLogger().warning("- Atual: '" + currentTitle + "'");
-        plugin.getLogger().warning("- Esperado: '" + data.inventoryTitle + "'");
-        return false;
-      }
-
-      // Validação da categoria
-      if (data.category == null) {
-        plugin.getLogger().warning("Categoria não definida para " + player.getName());
-        return false;
-      }
-
-      // Log do processamento do clique
       plugin.getLogger().info(String.format("Processando clique para %s: slot=%d, categoria=%s, página=%d",
-          player.getName(), slot, data.category.getName(), data.currentPage));
+          player.getName(), slot, data.currentCategory.getName(), data.currentPage));
 
-      // Processamento dos botões de navegação
       if (slot == BACK_BUTTON_SLOT) {
         plugin.getLogger().info("Voltando ao menu principal para " + player.getName());
         plugin.getShopGUI().openMainMenu(player);
@@ -243,22 +217,26 @@ public class CategoryGUI {
 
       if (slot == PREV_PAGE_SLOT && data.currentPage > 0) {
         plugin.getLogger().info("Mudando para página anterior para " + player.getName());
-        openCategoryGUI(player, data.category, data.currentPage - 1);
+        openCategoryGUI(player, data.currentCategory, data.currentPage - 1);
         return true;
       }
 
       if (slot == NEXT_PAGE_SLOT && hasNextPage(data)) {
         plugin.getLogger().info("Mudando para próxima página para " + player.getName());
-        openCategoryGUI(player, data.category, data.currentPage + 1);
+        openCategoryGUI(player, data.currentCategory, data.currentPage + 1);
         return true;
       }
 
-      // Processamento do clique em item
-      ShopItem clickedItem = data.itemSlotMap.get(slot);
+      ShopItem clickedItem = data.slotMap.get(slot);
       if (clickedItem != null) {
         plugin.getLogger().info(String.format("Clique em item para %s: %s (slot %d)",
             player.getName(), clickedItem.getName(), slot));
-        openConfirmationGUI(player, clickedItem, isLeftClick, isShiftClick);
+
+        if (isShiftClick && !isLeftClick) {
+          showPreview(player, clickedItem);
+        } else {
+          plugin.getConfirmationGUI().openBuyConfirmation(player, clickedItem, isLeftClick);
+        }
         return true;
       }
 
@@ -272,25 +250,137 @@ public class CategoryGUI {
     }
   }
 
-  /**
-   * Abre a GUI de confirmação para compra/venda
-   *
-   * @param player       Jogador
-   * @param item         Item selecionado
-   * @param isLeftClick  Se é clique esquerdo (compra) ou direito (venda)
-   * @param isShiftClick Se Shift está pressionado (aumenta quantidade)
-   */
-  private void openConfirmationGUI(Player player, ShopItem item, boolean isLeftClick, boolean isShiftClick) {
-    boolean isBuying = isLeftClick;
-    int quantity = 1;
-    if (isShiftClick) {
-      quantity = isBuying ? plugin.getConfigLoader().getMaxBuyQuantity()
-          : plugin.getConfigLoader().getMaxSellQuantity();
-    }
-    plugin.getConfirmationGUI().openConfirmationGUI(player, item, quantity, isBuying);
-  }
-
   private ItemStack createNavigationButton(Material material, String name) {
     return ItemUtils.createItem(material, name, (List<String>) null);
+  }
+
+  public void openCategory(Player player, ShopCategory category, int page) {
+    PlayerCategoryData data = getPlayerData(player);
+    data.currentCategory = category;
+    data.currentPage = page;
+
+    String title = TextUtils.colorize(plugin.getConfigLoader().getMessage("gui.category_title",
+        "&8{category}").replace("{category}", category.getName()));
+    Inventory inv = Bukkit.createInventory(null, rows * 9, title);
+
+    // Preenche slots vazios
+    if (plugin.getConfigLoader().shouldFillEmptySlots()) {
+        ItemStack filler = new ItemStack(
+            plugin.getConfigLoader().getFillMaterial(),
+            1,
+            (short) plugin.getConfigLoader().getFillData());
+        ItemMeta fillerMeta = filler.getItemMeta();
+        if (fillerMeta != null) {
+            fillerMeta.setDisplayName(" ");
+            filler.setItemMeta(fillerMeta);
+        }
+        for (int i = 0; i < inv.getSize(); i++) {
+            inv.setItem(i, filler);
+        }
+    }
+
+    List<ShopItem> items = category.getItems();
+    int totalPages = (items.size() - 1) / 28 + 1;
+    int startIndex = (page - 1) * 28;
+    int endIndex = Math.min(startIndex + 28, items.size());
+
+    // Adiciona itens
+    int slot = 10;
+    String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
+    for (int i = startIndex; i < endIndex; i++) {
+        ShopItem item = items.get(i);
+        ItemStack icon = item.createDisplayItem(currencySymbol);
+        inv.setItem(slot, icon);
+        data.slotMap.put(slot, item);
+
+        slot += (slot % 9 == 7) ? 3 : 1;
+    }
+
+    // Adiciona botão de voltar
+    ItemStack backIcon = new ItemStack(Material.ARROW);
+    ItemMeta backMeta = backIcon.getItemMeta();
+    if (backMeta != null) {
+        backMeta.setDisplayName(TextUtils.colorize("&cVoltar"));
+        backIcon.setItemMeta(backMeta);
+    }
+    inv.setItem(BACK_SLOT, backIcon);
+
+    // Adiciona botões de navegação se necessário
+    if (page > 1) {
+        ItemStack prevIcon = new ItemStack(Material.ARROW);
+        ItemMeta prevMeta = prevIcon.getItemMeta();
+        if (prevMeta != null) {
+            prevMeta.setDisplayName(TextUtils.colorize("&ePágina anterior"));
+            prevIcon.setItemMeta(prevMeta);
+        }
+        inv.setItem(NEXT_SLOT - 1, prevIcon);
+    }
+
+    if (page < totalPages) {
+        ItemStack nextIcon = new ItemStack(Material.ARROW);
+        ItemMeta nextMeta = nextIcon.getItemMeta();
+        if (nextMeta != null) {
+            nextMeta.setDisplayName(TextUtils.colorize("&ePróxima página"));
+            nextIcon.setItemMeta(nextMeta);
+        }
+        inv.setItem(NEXT_SLOT, nextIcon);
+    }
+
+    // Adiciona botão de preview
+    ItemStack previewIcon = new ItemStack(Material.GLASS);
+    ItemMeta previewMeta = previewIcon.getItemMeta();
+    if (previewMeta != null) {
+        previewMeta.setDisplayName(TextUtils.colorize("&bPreview de Itens"));
+        List<String> previewLore = new ArrayList<>();
+        previewLore.add(TextUtils.colorize("&7Clique em um item com"));
+        previewLore.add(TextUtils.colorize("&7botão direito para ver"));
+        previewLore.add(TextUtils.colorize("&7como ele ficará no seu"));
+        previewLore.add(TextUtils.colorize("&7inventário"));
+        previewMeta.setLore(previewLore);
+        previewIcon.setItemMeta(previewMeta);
+    }
+    inv.setItem(PREVIEW_SLOT, previewIcon);
+
+    player.openInventory(inv);
+  }
+
+  private void showPreview(Player player, ShopItem item) {
+    // Salva inventário atual
+    ItemStack[] oldContents = player.getInventory().getContents().clone();
+
+    // Limpa inventário
+    player.getInventory().clear();
+
+    // Adiciona o item para preview
+    player.getInventory().addItem(item.toItemStack(64)); // Usa quantidade máxima padrão do Minecraft
+
+    // Salva dados do preview
+    previewData.put(player.getUniqueId(), new PreviewData(item, 64));
+
+    // Agenda restauração do inventário
+    plugin.getServer().getScheduler().runTaskLater(plugin, new Runnable() {
+      @Override
+      public void run() {
+        if (player.isOnline()) {
+          PreviewData preview = previewData.get(player.getUniqueId());
+          if (preview != null && !preview.isExpired()) {
+            player.getInventory().setContents(oldContents);
+            player.sendMessage(TextUtils.colorize("&aPreview finalizado!"));
+            previewData.remove(player.getUniqueId());
+          }
+        }
+      }
+    }, 100L); // 5 segundos
+
+    player.sendMessage(TextUtils.colorize("&aPreview ativo por 5 segundos!"));
+  }
+
+  private int getTotalPages(ShopCategory category) {
+    return (category.getItems().size() - 1) / 28 + 1;
+  }
+
+  public void cleanup() {
+    // Remove dados de preview expirados
+    previewData.entrySet().removeIf(entry -> entry.getValue().isExpired());
   }
 }

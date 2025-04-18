@@ -1,13 +1,11 @@
 #!/bin/bash
 
 # Script de deploy automático para o PrimeLeagueShop
-# AVISO: Este script contém senha em texto puro, o que não é recomendado para uso em produção
-# Para maior segurança, configure autenticação por chave SSH
+# Este script usa autenticação por chave SSH para maior segurança
 
 # Configurações
 SERVER_IP="181.215.45.238"
 SERVER_USER="root"
-SERVER_PASS="rianzada"
 PLUGIN_DIR="/home/minecraft/server/plugins"
 PLUGIN_NAME="shop-1.0.0.jar"
 
@@ -39,32 +37,26 @@ fi
 
 echo -e "${GREEN}Arquivo JAR compilado com sucesso: $JAR_PATH${NC}"
 
-# Instalar sshpass se não estiver disponível (necessário para uso com senha)
-if ! command -v sshpass &> /dev/null; then
-    echo -e "${GREEN}Instalando sshpass...${NC}"
-    brew install sshpass || { echo -e "${RED}Falha ao instalar sshpass. Instale manualmente.${NC}"; exit 1; }
-fi
-
 # Upload do arquivo para o servidor
 echo -e "${GREEN}Enviando plugin para o servidor...${NC}"
-sshpass -p "$SERVER_PASS" scp "$JAR_PATH" "$SERVER_USER@$SERVER_IP:$PLUGIN_DIR/"
+scp "$JAR_PATH" "$SERVER_USER@$SERVER_IP:$PLUGIN_DIR/"
 
 # Verificar se o upload foi bem sucedido
 if [ $? -ne 0 ]; then
-    echo -e "${RED}Erro ao enviar arquivo para o servidor! Verifique as credenciais e conexão.${NC}"
+    echo -e "${RED}Erro ao enviar arquivo para o servidor! Verifique sua chave SSH e conexão.${NC}"
     exit 1
 fi
 
 # Criar pasta de configurações e enviar arquivos YAML
 echo -e "${GREEN}Enviando arquivos de configuração...${NC}"
 CONFIG_DIR="$PLUGIN_DIR/PrimeLeagueShop"
-sshpass -p "$SERVER_PASS" ssh "$SERVER_USER@$SERVER_IP" "mkdir -p $CONFIG_DIR"
-sshpass -p "$SERVER_PASS" scp "src/main/resources/config.yml" "$SERVER_USER@$SERVER_IP:$CONFIG_DIR/config.yml"
-sshpass -p "$SERVER_PASS" scp "src/main/resources/shop.yml" "$SERVER_USER@$SERVER_IP:$CONFIG_DIR/shop.yml"
-sshpass -p "$SERVER_PASS" scp "src/main/resources/messages.yml" "$SERVER_USER@$SERVER_IP:$CONFIG_DIR/messages.yml"
+ssh "$SERVER_USER@$SERVER_IP" "mkdir -p $CONFIG_DIR"
+scp "src/main/resources/config.yml" "$SERVER_USER@$SERVER_IP:$CONFIG_DIR/config.yml"
+scp "src/main/resources/shop.yml" "$SERVER_USER@$SERVER_IP:$CONFIG_DIR/shop.yml"
+scp "src/main/resources/messages.yml" "$SERVER_USER@$SERVER_IP:$CONFIG_DIR/messages.yml"
 
 # Reiniciar o servidor Minecraft (opcional, descomente se necessário)
 echo -e "${GREEN}Reiniciando o servidor Minecraft...${NC}"
-sshpass -p "$SERVER_PASS" ssh "$SERVER_USER@$SERVER_IP" "cd /home/minecraft/server && ./restart.sh"
+ssh "$SERVER_USER@$SERVER_IP" "cd /home/minecraft/server && ./restart.sh"
 
 echo -e "${GREEN}Deploy concluído com sucesso!${NC}"

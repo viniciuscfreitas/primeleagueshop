@@ -54,11 +54,12 @@ public class TopSubCommand implements SubCommand {
           return;
         }
 
+        String currencySymbol = plugin.getConfigLoader().getCurrencySymbol();
         int position = 1;
         for (Map.Entry<String, Double> entry : top) {
           String medal = position == 1 ? "§6" : position == 2 ? "§7" : position == 3 ? "§c" : "§f";
-          player.sendMessage(String.format("%s#%d §7%s: §f$%.2f",
-              medal, position, entry.getKey(), entry.getValue()));
+          player.sendMessage(String.format("%s#%d §7%s: §f%s%.2f",
+              medal, position, entry.getKey(), currencySymbol, entry.getValue()));
           position++;
         }
       });
